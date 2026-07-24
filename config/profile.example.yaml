@@ -1,0 +1,42 @@
+# ── Screening-question knowledge base + contact profile (per user) ────
+# Copy to `config/profile.yaml` (gitignored) and fill in YOUR real answers.
+# The Resume/Application agents read this to auto-fill Easy Apply forms
+# correctly instead of guessing. It NEVER invents facts beyond what's here.
+
+personal:
+  full_name: ""
+  email: ""                 # the address recruiters should reply to
+  phone: ""
+  location: ""              # city, country
+  linkedin_url: ""
+  portfolio_url: ""
+  github_url: ""
+
+# Work eligibility
+work_authorization: ""      # e.g. "Indian citizen — no sponsorship required"
+notice_period: ""           # e.g. "30 days"
+availability: ""            # e.g. "Immediate" / "From 1 Sept 2026"
+
+# Compensation & logistics
+salary_expectation: ""      # e.g. "18–22 LPA" or "$90k–110k"
+willing_to_relocate: false
+remote_preference: ""       # e.g. "Remote preferred; hybrid OK"
+
+# Years of hands-on experience per key skill (used for "how many years of X?" questions)
+years_experience:
+  # skill: years
+  python: 0
+  aws: 0
+  docker: 0
+
+# Free-form Q&A the agent can match against common screening questions.
+# Add anything recruiters commonly ask.
+screening_answers:
+  - question: "Are you authorized to work in this location?"
+    answer: ""
+  - question: "Do you require visa sponsorship?"
+    answer: ""
+  - question: "What are your salary expectations?"
+    answer: ""
+  - question: "What is your notice period?"
+    answer: ""

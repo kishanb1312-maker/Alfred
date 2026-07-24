@@ -9,8 +9,8 @@ Demonstrates the de-dupe pipeline end-to-end:
 This does NOT call LinkedIn or Adzuna. Every job below is fake sample data,
 labeled as such, per the "No fabrication" guardrail (dry-run only).
 
-Pure stdlib: a minimal YAML-subset reader is included so no dependency
-(e.g. PyYAML) is needed for this demo. See note at bottom re: production config.
+Config is parsed with PyYAML's ``yaml.safe_load`` — the same call the real
+Job Finder uses on ``config/search.yaml`` (see requirements.txt: PyYAML>=6.0).
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+
+import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import applied_history  # noqa: E402
@@ -27,58 +29,14 @@ CONFIG_PATH = os.path.join(_REPO_ROOT, "config", "search.example.yaml")
 
 
 # ---------------------------------------------------------------------------
-# Minimal YAML-subset reader (top-level keys, one nested map level, scalar lists)
+# Config reader — PyYAML (same as the real Job Finder on config/search.yaml)
 # ---------------------------------------------------------------------------
 
-def _coerce(value: str):
-    v = value.strip()
-    if v in ("true", "True"):
-        return True
-    if v in ("false", "False"):
-        return False
-    if v.isdigit():
-        return int(v)
-    return v
-
-
 def load_config(path: str) -> dict:
-    """Parse the small, well-known WarmApply config shape. Not a full YAML parser."""
-    result: dict = {}
-    current_list_key = None   # top-level key currently collecting "- " items
-    current_map_key = None    # top-level key currently collecting nested "k: v"
-
+    """Read a WarmApply YAML config via yaml.safe_load()."""
     with open(path, "r", encoding="utf-8") as fh:
-        for raw in fh:
-            line = raw.rstrip("\n")
-            if not line.strip() or line.lstrip().startswith("#"):
-                continue
-
-            indent = len(line) - len(line.lstrip(" "))
-            stripped = line.strip()
-
-            if indent == 0:
-                current_list_key = current_map_key = None
-                if stripped.endswith(":"):
-                    # Header of a list or nested map; decide when we see child lines.
-                    key = stripped[:-1].strip()
-                    result[key] = None
-                    current_list_key = current_map_key = key
-                else:
-                    key, _, val = stripped.partition(":")
-                    result[key.strip()] = _coerce(val)
-            else:
-                if stripped.startswith("- "):
-                    key = current_list_key
-                    if result.get(key) is None or not isinstance(result.get(key), list):
-                        result[key] = []
-                    result[key].append(_coerce(stripped[2:]))
-                elif ":" in stripped:
-                    key = current_map_key
-                    if result.get(key) is None or not isinstance(result.get(key), dict):
-                        result[key] = {}
-                    sub, _, val = stripped.partition(":")
-                    result[key][sub.strip()] = _coerce(val)
-    return result
+        data = yaml.safe_load(fh)
+    return data or {}
 
 
 # ---------------------------------------------------------------------------

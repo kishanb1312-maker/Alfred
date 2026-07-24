@@ -1,0 +1,13 @@
+# Deterministic Python helpers (run via Bash from the Claude Code session).
+# The "brain" is your Claude Code session — no LLM SDK is listed here on purpose.
+
+python-docx>=1.1.0      # read/edit the master resume DOCX (text only, format locked)
+PyYAML>=6.0             # read config/search.yaml + config/profile.yaml
+requests>=2.31.0        # email-finder API (Hunter/Apollo), Adzuna, etc.
+email-validator>=2.1.0  # syntax validation for discovered emails
+dnspython>=2.6.0        # MX-record check during email verification
+
+# System dependency (NOT pip): LibreOffice — used for DOCX -> PDF conversion
+#   macOS:  brew install --cask libreoffice
+#   Ubuntu: sudo apt-get install libreoffice
+# Invoked as:  soffice --headless --convert-to pdf <file.docx>
