@@ -1,6 +1,10 @@
 # Secrets & local config
 .env
 config/search.yaml
+config/profile.yaml
+
+# Tailored application artifacts (generated per job)
+output/
 
 # Runtime data / stores
 data/applied_history.json
