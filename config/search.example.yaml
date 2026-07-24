@@ -1,0 +1,33 @@
+# WarmApply · example search config
+# Copy to config/search.yaml and edit. The Job Finder falls back to THIS file
+# (with a warning) when config/search.yaml is missing.
+
+roles:
+  - Site Reliability Engineer
+  - DevOps Engineer
+  - Platform Engineer
+
+locations:
+  - Remote (India)
+  - Bengaluru
+
+seniority: mid
+
+sources:
+  - linkedin_easy_apply
+  - adzuna
+
+blacklist_companies:
+  - Shady Recruiters LLC
+  - Acme Corp
+
+caps:
+  applies_per_day: 10
+
+match_threshold: 70
+
+pacing:
+  min_seconds_between_actions: 4
+  max_seconds_between_actions: 9
+
+dry_run: true

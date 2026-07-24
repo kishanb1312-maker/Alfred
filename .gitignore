@@ -1,0 +1,16 @@
+# Secrets & local config
+.env
+config/search.yaml
+
+# Runtime data / stores
+data/applied_history.json
+data/*.dryrun.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS
+.DS_Store
