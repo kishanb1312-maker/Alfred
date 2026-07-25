@@ -50,11 +50,25 @@ See [`SPEC.md`](SPEC.md) for the full design.
 
 ## Running
 
-Open a Claude Code session in this folder and tell it to start the job hunt.
-Keep `dry_run: true` in `config/search.yaml` until you've watched it work end-to-end.
-Use `/loop` if you want it to repeat while the session stays open.
+Open a Claude Code session in this folder and say **"run WarmApply."** The session follows
+[`RUNBOOK.md`](RUNBOOK.md), which sequences the six worker subagents in
+[`.claude/agents/`](.claude/agents) (reconcile → find → research → tailor → track → approve → apply).
+
+First, sanity-check your setup:
+
+```bash
+python scripts/orchestrate.py --preflight
+```
+
+This confirms `config/search.yaml`, `config/profile.yaml`, and a master resume in `data/` exist,
+and reports whether **dry_run** is on and whether **/pause** is set. Keep `dry_run: true` in
+`config/search.yaml` until you've watched a full pass. Use `/loop` to repeat while the session
+stays open.
 
 Telegram commands: **✅ Approve** / **⏭️ Skip** per job, and **/pause** to halt all sending.
+
+See [`RUNBOOK.md`](RUNBOOK.md) for the full step-by-step sequence and the canonical job-object
+data contract.
 
 ---
 
