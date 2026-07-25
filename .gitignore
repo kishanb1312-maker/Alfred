@@ -10,6 +10,9 @@ output/
 data/applied_history.json
 data/*.dryrun.json
 data/notion_state.json
+data/telegram_state.json
+data/approved_queue.json
+data/paused.flag
 
 # Python
 __pycache__/
