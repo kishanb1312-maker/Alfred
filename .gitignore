@@ -13,6 +13,7 @@ data/notion_state.json
 data/telegram_state.json
 data/approved_queue.json
 data/paused.flag
+data/daily_counts.json
 
 # Python
 __pycache__/
