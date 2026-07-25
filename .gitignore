@@ -9,6 +9,7 @@ output/
 # Runtime data / stores
 data/applied_history.json
 data/*.dryrun.json
+data/notion_state.json
 
 # Python
 __pycache__/
