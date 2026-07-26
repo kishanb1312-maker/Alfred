@@ -12,6 +12,7 @@ from . import remoteok
 from . import weworkremotely
 from . import jobspresso
 from . import wellfound
+from . import indeed
 
 # name (as used in config search_order) → adapter module.
 # Python (API/RSS) sources expose fetch(...); BROWSER sources (BROWSER=True) expose
@@ -21,4 +22,5 @@ REGISTRY = {
     "we_work_remotely": weworkremotely,
     "jobspresso": jobspresso,
     "wellfound": wellfound,
+    "indeed": indeed,
 }

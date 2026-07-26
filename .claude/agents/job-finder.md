@@ -60,6 +60,19 @@ appearing **first in `search_order` wins** a duplicate. Do not de-dupe the two s
    block**, **skip the source with a one-line note and continue the run** — never get stuck and
    **never attempt to solve a CAPTCHA**. Read-only; applying happens later, human-approved.
 
+### Browser source: Indeed  ⚠️ most block-prone — be extra gentle
+1. Use the **India domain**: `https://in.indeed.com/jobs?q=<role>&l=<location>`, built from
+   `config/search.yaml` roles + locations (for remote, `l=Remote`).
+2. Drive the user's **logged-in Chrome**. Read the rendered job cards; each card carries a
+   **jobkey** (`data-jk`, also `jk=` in the viewjob URL), title, company, location, snippet, and a
+   **relative** date. Call `scripts/sources/indeed.py :: normalize(card)` on each — `job_id` comes
+   from the jobkey, missing company → `null`, relative date → `posted_date=None` (never fabricate).
+3. **Indeed is the most anti-bot-aggressive source.** Be extra gentle: fetch **minimal pages**,
+   strong **human-like pacing** (respect `pacing`), and the moment Indeed shows a **CAPTCHA /
+   "verify you're human" / block page**, STOP Indeed immediately, record a one-line skip note, and
+   **continue the run**. **Never attempt to solve a CAPTCHA.**
+4. Recommend the user stay **logged into Indeed in Chrome** for reliability.
+
 ### Browser source: LinkedIn Easy Apply
 Drive the already-authenticated Chrome; search each role × location, filter to Easy Apply where
 possible; extract title, company, location, URL, posted date, snippet, and whether it is Easy Apply.
