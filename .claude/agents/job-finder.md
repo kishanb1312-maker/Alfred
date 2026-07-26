@@ -24,22 +24,49 @@ Query **every implemented source on every run**, in the sequence given by `confi
 search_order` (falls back to the flat `sources:` list). **Do NOT stop early and do NOT cap how many
 jobs you find** — the daily caps limit *applying* (handled later by the application-agent), never
 finding. A source listed but not yet implemented is **skipped with a one-line note**; a source that
-errors returns `[]` and the run **continues**. The deterministic core of this lives in
-`scripts/source_dispatch.py :: dispatch(...)` with adapters in `scripts/sources/`.
+errors returns `[]` and the run **continues**.
 
-1. **linkedin_easy_apply** — drive the user's **real logged-in Chrome** (Claude-in-Chrome MCP).
-   - Search each role × location, filter to Easy Apply where possible.
-   - Extract per listing: title, company, location, job URL, posted date, a short description
-     snippet, and whether it is Easy Apply.
-   - Be gentle and human-paced (respect `pacing` in config). Never log in or store credentials —
-     the browser is already authenticated.
-2. **adzuna** — call the **Adzuna REST API** (needs free `ADZUNA_APP_ID` + `ADZUNA_APP_KEY`
-   in `.env`). Query by role + location; map results into the same normalized shape.
-3. **remoteok** — `scripts/sources/remoteok.py` (Adapter). GET the RemoteOK API (real User-Agent,
-   read-only), skip the metadata element, normalize + role-filter to the canonical shape.
+## Two kinds of source
 
-*Other sources (we_work_remotely, jobspresso, wellfound, indeed, greenhouse_lever, linkedin_feed)
-plug into `search_order` as they are built; until then they are skipped with a note.*
+- **Python sources (API/RSS)** — `adzuna`, `remoteok`, `we_work_remotely`, `jobspresso`,
+  `greenhouse_lever`. These have a `fetch()` in `scripts/sources/` and are run for you by
+  `scripts/source_dispatch.py :: dispatch(...)` (read-only HTTP, normalized to the canonical shape).
+- **Browser sources** — `linkedin_easy_apply`, `linkedin_feed`, `indeed`, `wellfound`. These have
+  **no API/RSS**, so **YOU (the subagent) drive the user's logged-in Chrome** (Claude-in-Chrome MCP),
+  read the rendered job cards, and pass each card to the source's pure `normalize()`
+  (e.g. `scripts/sources/wellfound.py :: normalize`). A browser module is marked `BROWSER = True`, so
+  `dispatch` **does not** call a Python fetch for it — it reports `status: "browser"` and leaves the
+  browsing to you.
+
+## Combining + de-duping
+
+Each run: gather the **Python-source** jobs (one call to `source_dispatch.dispatch`) AND the
+**browser-source** jobs (drive Chrome per browser source), then run **ONE** order-preserving de-dupe
+(`scripts/applied_history.py :: dedupe`) over the **combined** list in `search_order` — the source
+appearing **first in `search_order` wins** a duplicate. Do not de-dupe the two sets separately.
+
+### Python source examples
+- **adzuna** — Adzuna REST API (needs free `ADZUNA_APP_ID` + `ADZUNA_APP_KEY` in `.env`).
+- **remoteok** — `scripts/sources/remoteok.py`: GET the RemoteOK API (real User-Agent), skip the
+  metadata element, normalize + role-filter.
+
+### Browser source: Wellfound
+1. In the user's **logged-in Chrome**, navigate to `https://wellfound.com/jobs`.
+2. Apply the **role + location filters** from `config/search.yaml`.
+3. Read the rendered job cards; for each, call `scripts/sources/wellfound.py :: normalize(card)`
+   with the scraped fields (title, company, location, url, posted, snippet). Missing company → `null`
+   (never fabricate).
+4. **Be gentle & human-paced** (respect `pacing`). If Wellfound shows a **login wall, CAPTCHA, or
+   block**, **skip the source with a one-line note and continue the run** — never get stuck and
+   **never attempt to solve a CAPTCHA**. Read-only; applying happens later, human-approved.
+
+### Browser source: LinkedIn Easy Apply
+Drive the already-authenticated Chrome; search each role × location, filter to Easy Apply where
+possible; extract title, company, location, URL, posted date, snippet, and whether it is Easy Apply.
+Be gentle and human-paced. Never log in or store credentials — the browser is already authenticated.
+
+*Sources not yet built (`indeed`, `greenhouse_lever`, `linkedin_feed`, …) plug into `search_order`
+as they land; until then they are skipped with a note.*
 
 # Normalized output (one object per job)
 

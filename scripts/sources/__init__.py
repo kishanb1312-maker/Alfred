@@ -11,10 +11,14 @@ from __future__ import annotations
 from . import remoteok
 from . import weworkremotely
 from . import jobspresso
+from . import wellfound
 
-# name (as used in config search_order) → adapter module with .fetch(...)
+# name (as used in config search_order) → adapter module.
+# Python (API/RSS) sources expose fetch(...); BROWSER sources (BROWSER=True) expose
+# only a pure normalize(...) and are driven by the job-finder subagent, not dispatch.
 REGISTRY = {
     "remoteok": remoteok,
     "we_work_remotely": weworkremotely,
     "jobspresso": jobspresso,
+    "wellfound": wellfound,
 }
