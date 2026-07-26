@@ -10,9 +10,11 @@ from __future__ import annotations
 
 from . import remoteok
 from . import weworkremotely
+from . import jobspresso
 
 # name (as used in config search_order) → adapter module with .fetch(...)
 REGISTRY = {
     "remoteok": remoteok,
     "we_work_remotely": weworkremotely,
+    "jobspresso": jobspresso,
 }
