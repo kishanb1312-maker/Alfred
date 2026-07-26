@@ -9,8 +9,10 @@ absent from REGISTRY are treated as "not implemented yet" and skipped.
 from __future__ import annotations
 
 from . import remoteok
+from . import weworkremotely
 
 # name (as used in config search_order) → adapter module with .fetch(...)
 REGISTRY = {
     "remoteok": remoteok,
+    "we_work_remotely": weworkremotely,
 }
