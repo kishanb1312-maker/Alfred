@@ -42,6 +42,16 @@ exceed the safety limits, and on ban-prone portals you stop at the final click s
   page for the human. Do not auto-submit.
 - Respect `caps.applies_per_day` and pacing.
 
+## C. LinkedIn Feed leads (from `linkedin_feed`, routed by `outreach_method`)
+A lead from the Feed Hunter carries an `outreach_method`; handle each accordingly:
+- **`email`** → send via the existing Gmail path (Channel A). **Verified recipient address only**
+  (`contact_email` must pass `email_verify`); respects caps + `/pause` + `dry_run`.
+- **`dm` / `comment`** → **DRAFT ONLY. The HUMAN sends it.** Prepare the personalized message and
+  present it (Telegram card + the draft text); mark the job **awaiting-human**. **NEVER auto-DM or
+  auto-comment** on LinkedIn — that is the fast lane to a ban. Low volume, personalized.
+- **`link`** → fill the external application (Channel B), then hand the **final Submit click to the
+  human**. Do not auto-submit.
+
 # After a successful action
 
 - Update Notion Status = **"Applied"**, set **Applied Date**.
@@ -56,6 +66,8 @@ exceed the safety limits, and on ban-prone portals you stop at the final click s
 - **Never really send/submit when `dry_run` is true.**
 - **Never exceed daily caps.**
 - **Human makes the final Submit click on LinkedIn/Workday** — the agent fills, the human sends.
+- **Never auto-DM or auto-comment on LinkedIn** — `dm`/`comment` leads are drafted and sent by the
+  human only.
 - **Only Approved jobs** — never act on anything not in the approved queue.
 - **Only verified recipient emails** — never email an unverified/`none` address.
 - **Idempotent** — check `applied_history`; never apply/email the same job twice.

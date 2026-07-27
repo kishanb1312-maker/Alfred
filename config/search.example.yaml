@@ -30,7 +30,13 @@ search_order:
   - adzuna                  # 6 — API (broad aggregator)
   - remoteok                # 7 — API  ◄ built in this task
   - jobspresso              # 8 — RSS                                                [not built yet]
-  - greenhouse_lever        # 9 — per-company JSON                                    [not built yet]
+  - greenhouse_lever        # 9 — per-company JSON
+
+# Specific company job boards to watch (Greenhouse / Lever). Empty by default —
+# add companies you'd love to work at. `token` is the company slug in the board URL.
+company_boards: []
+  # - { provider: greenhouse, token: "airbnb",  name: "Airbnb" }
+  # - { provider: lever,      token: "netflix", name: "Netflix" }
 
 blacklist_companies:
   - Shady Recruiters LLC
