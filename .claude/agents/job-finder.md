@@ -78,8 +78,26 @@ Drive the already-authenticated Chrome; search each role × location, filter to 
 possible; extract title, company, location, URL, posted date, snippet, and whether it is Easy Apply.
 Be gentle and human-paced. Never log in or store credentials — the browser is already authenticated.
 
-*Sources not yet built (`indeed`, `greenhouse_lever`, `linkedin_feed`, …) plug into `search_order`
-as they land; until then they are skipped with a note.*
+### Browser source: LinkedIn Feed Hunter  ⭐ WarmApply's warm-outreach edge
+"We're hiring" posts don't go through job portals — the poster wants a **DM, comment, or email**.
+The Feed Hunter finds these and routes each to the right outreach method (via
+`scripts/sources/linkedin_feed.py :: normalize`), producing a **lead** (canonical job shape + the
+outreach fields below).
+1. In the user's **logged-in Chrome**, search LinkedIn content/feed for **hiring signals** combined
+   with the user's `roles`: `#hiring`, "we're hiring" / "we are hiring", "looking for a <role>",
+   "<role> role open", "DM me", "email me". Prefer **recent** posts; filter by location where the UI
+   allows.
+2. For each post, read the text and extract: role, company (poster's company or named), the
+   **recruiter (poster) name + profile URL**, any **email stated in the post**, and the intended
+   response. Call `normalize(post)`.
+3. **Decide `outreach_method`** from the post: an email present → `email`; an application link →
+   `link`; "comment below" → `comment`; "DM me"/"message me" → `dm`. Default `dm` if unclear.
+   Anything not stated (company/email/name) → `null` — **never fabricate**.
+4. **Low volume + gentle + graceful:** human-like pacing; on any block/CAPTCHA/login wall, skip with
+   a note and continue. **Read-only — no messaging happens here** (the application-agent sends, and
+   only after human approval). Outreach at scale = ban risk; keep it small and personalized.
+
+*Sources not yet built plug into `search_order` as they land; until then they are skipped with a note.*
 
 # Normalized output (one object per job)
 

@@ -14,6 +14,7 @@ from . import jobspresso
 from . import wellfound
 from . import indeed
 from . import greenhouse_lever
+from . import linkedin_feed
 
 # name (as used in config search_order) → adapter module.
 # Python (API/RSS) sources expose fetch(...); BROWSER sources (BROWSER=True) expose
@@ -25,4 +26,5 @@ REGISTRY = {
     "wellfound": wellfound,
     "indeed": indeed,
     "greenhouse_lever": greenhouse_lever,
+    "linkedin_feed": linkedin_feed,
 }
