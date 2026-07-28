@@ -54,6 +54,28 @@ def _slug(value: Optional[str]) -> str:
     return v.rsplit("/", 1)[-1] if "/" in v else v
 
 
+def clean_job_url(url: Optional[str]) -> Optional[str]:
+    """Return a SPECIFIC Wellfound job URL, or None if it's a role-list/search URL.
+
+    Rejects (→ None): a role search (`/role/`), a location list (`/l/`), or a bare
+    `/jobs` with no specific id. Keeps a specific posting such as
+    `wellfound.com/jobs/<id>-<slug>` or `wellfound.com/company/<slug>/jobs/<id>...`
+    (identified by a `/jobs/<segment>` where the segment contains a digit id).
+    """
+    if not url:
+        return None
+    u = str(url).strip()
+    if not u:
+        return None
+    low = u.lower()
+    if "/role/" in low or "/l/" in low:
+        return None
+    m = re.search(r"/jobs/([^/?#]+)", low)
+    if m and re.search(r"\d", m.group(1)):
+        return u
+    return None  # /jobs search with no id, or unrecognized → never store a wrong link
+
+
 def _posted_date(value: Any) -> Optional[str]:
     """Pass through an ISO date (YYYY-MM-DD...) → YYYY-MM-DD; else None.
 
@@ -77,7 +99,15 @@ def normalize(raw_card: Dict[str, Any]) -> Dict[str, Any]:
     else the URL slug.
     """
     raw_card = raw_card or {}
-    stable = str(raw_card.get("id") or "").strip() or _slug(raw_card.get("url"))
+
+    # url = the SPECIFIC job posting URL; reject role-list/search URLs so we never
+    # store the link used to *find* jobs. Never fabricate one.
+    job_url = clean_job_url(raw_card.get("url"))
+    seg = ""
+    if job_url:
+        m = re.search(r"/jobs/([^/?#]+)", job_url)
+        seg = m.group(1) if m else ""
+    stable = str(raw_card.get("id") or "").strip() or seg or (_slug(job_url) if job_url else "")
 
     company = (raw_card.get("company") or "").strip() or None  # never fabricate
     desc = raw_card.get("description")
@@ -92,7 +122,7 @@ def normalize(raw_card: Dict[str, Any]) -> Dict[str, Any]:
         "company": company,
         "company_domain": None,
         "location": (raw_card.get("location") or "").strip() or "Remote",
-        "url": raw_card.get("url"),
+        "url": job_url,  # the specific job posting URL, or null (never a role-list URL)
         "posted_date": _posted_date(raw_card.get("posted") or raw_card.get("posted_date")),
         "easy_apply": False,
         "description_snippet": snippet,

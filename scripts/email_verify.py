@@ -156,3 +156,35 @@ def generate_patterns(first: str, last: str, domain: str) -> List[str]:
             seen.add(addr)
             out.append(addr)
     return out
+
+
+def best_pattern(first: str, last: str, domain: str) -> Optional[str]:
+    """The SINGLE most-likely guessed address (`first.last@domain`), or None.
+
+    Used as the last-resort fallback in the email waterfall: WarmApply guesses ONE
+    address only (never blasts multiple guesses). The caller MUST still MX-verify the
+    domain before accepting it (see `best_guess`). Returns None if inputs are too thin.
+    """
+    patterns = generate_patterns(first, last, domain)
+    return patterns[0] if patterns else None
+
+
+def best_guess(first: str, last: str, domain: str,
+               check_mx: bool = True) -> Dict[str, object]:
+    """Produce the single best pattern-guess and gate it on the domain's MX.
+
+    Returns {email, verified_mailbox, mx, source}. `verified_mailbox` is always
+    False for a guess (no finder confirmed a real mailbox). `email` is None if the
+    guess can't be formed or (when check_mx) the domain has no valid MX — we never
+    keep a guess whose domain can't receive mail, and never fabricate a domain.
+    Set check_mx=False for a fully offline call (then `mx` is None).
+    """
+    candidate = best_pattern(first, last, domain)
+    if not candidate:
+        return {"email": None, "verified_mailbox": False, "mx": None, "source": "none"}
+
+    dom = candidate.rsplit("@", 1)[-1]
+    mx_ok: Optional[bool] = verify_mx(dom) if check_mx else None
+    if check_mx and not mx_ok:
+        return {"email": None, "verified_mailbox": False, "mx": False, "source": "none"}
+    return {"email": candidate, "verified_mailbox": False, "mx": mx_ok, "source": "pattern"}

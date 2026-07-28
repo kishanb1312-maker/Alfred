@@ -63,6 +63,40 @@ def _email_in(text: str) -> Optional[str]:
     return m.group(0) if m else None
 
 
+# LinkedIn activity id inside a permalink, e.g. urn:li:activity:<id> or ...-activity-<id>-...
+_ACTIVITY_RE = re.compile(r"activity[:\-](\d+)")
+
+
+def _activity_id(url: Optional[str]) -> str:
+    """Extract the numeric LinkedIn activity id from a permalink, or ''."""
+    if not url:
+        return ""
+    m = _ACTIVITY_RE.search(str(url))
+    return m.group(1) if m else ""
+
+
+def clean_permalink(url: Optional[str]) -> Optional[str]:
+    """Return a real post permalink, or None if the URL is missing / a search feed.
+
+    Rejects (→ None): empty, a `/search/` URL, or a bare `/feed/` with no `activity`
+    id (i.e. the feed root used to *find* posts). Keeps genuine permalinks such as
+    `/posts/...-activity-<id>-...` or `/feed/update/urn:li:activity:<id>/`.
+    """
+    if not url:
+        return None
+    u = str(url).strip()
+    if not u:
+        return None
+    low = u.lower()
+    if "/search/" in low:
+        return None
+    if "/feed/" in low and "activity" not in low:
+        return None
+    if "/posts/" in low or "activity" in low:
+        return u
+    return None  # not a recognized post permalink → never store a wrong link
+
+
 def decide_outreach_method(text: str, contact_email: Optional[str],
                            has_link: bool, explicit: Optional[str] = None) -> str:
     """Choose how to respond to a hiring post.
@@ -96,7 +130,16 @@ def normalize(raw_post: Dict[str, Any]) -> Dict[str, Any]:
     Unknown fields → null; never fabricate a company, email, or name.
     """
     raw_post = raw_post or {}
-    stable = str(raw_post.get("id") or "").strip() or _slug(raw_post.get("url"))
+
+    # url = the POST'S OWN permalink (from `permalink` or `url`); reject search/feed
+    # URLs so we never store the link used to *find* posts. Never fabricate one.
+    permalink = clean_permalink(raw_post.get("permalink") or raw_post.get("url"))
+
+    # Stable id: explicit id → activity id from the permalink → permalink slug.
+    activity = _activity_id(permalink) or _activity_id(raw_post.get("permalink") or raw_post.get("url"))
+    stable = (str(raw_post.get("id") or "").strip()
+              or activity
+              or (_slug(permalink) if permalink else ""))
 
     text = str(raw_post.get("text") or raw_post.get("description") or "")
     snippet = _strip_html(text)[:_SNIPPET_LEN]
@@ -117,7 +160,7 @@ def normalize(raw_post: Dict[str, Any]) -> Dict[str, Any]:
         "company": (raw_post.get("company") or "").strip() or None,   # never fabricate
         "company_domain": None,
         "location": (raw_post.get("location") or "").strip() or "Remote",
-        "url": raw_post.get("url"),
+        "url": permalink,  # the post's own permalink, or null (never the search URL)
         "posted_date": None,  # feed shows relative times; don't fabricate a date
         "easy_apply": False,
         "description_snippet": snippet,

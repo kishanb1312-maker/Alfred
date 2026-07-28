@@ -41,18 +41,21 @@ JOB_ID = "Job ID"
 APPLIED_DATE = "Applied Date"
 REPLY = "Reply"
 FOLLOW_UP_SENT = "Follow-up Sent"
+COLD_EMAILED = "Cold Emailed"   # dual-channel: an email was sent for this job
+BOUNCED = "Bounced"             # the cold email bounced (mailer-daemon)
 
 # Ordered list (drives both the schema and the completeness check).
 PROPERTIES: List[str] = [
     COMPANY, WEBSITE, ROLE, LOCATION, JOB_LINK, MATCH_SCORE, CHANNEL,
     HR_NAME, HR_EMAIL, EMAIL_CONFIDENCE, EMAIL_SOURCE, RESUME_FILE,
     COVER_LETTER_FILE, WHAT_I_CHANGED, STATUS, JOB_ID, APPLIED_DATE,
-    REPLY, FOLLOW_UP_SENT,
+    REPLY, FOLLOW_UP_SENT, COLD_EMAILED, BOUNCED,
 ]
 
 # Controlled vocabularies for the select properties.
+# Channel is a MULTI-select now: a job can be BOTH portal and email (dual-channel).
 CHANNEL_OPTIONS = ["portal", "email"]
-EMAIL_SOURCE_OPTIONS = ["career-page", "hunter", "linkedin", "pattern", "none"]
+EMAIL_SOURCE_OPTIONS = ["career-page", "hunter", "apollo", "linkedin", "pattern", "none"]
 STATUS_OPTIONS = ["New", "Ready for Review", "Approved", "Applied", "Skipped"]
 
 DEFAULT_STATUS = "Ready for Review"
@@ -69,6 +72,10 @@ def _select_def(options: List[str]) -> Dict[str, Any]:
     return {"select": {"options": [{"name": o} for o in options]}}
 
 
+def _multi_select_def(options: List[str]) -> Dict[str, Any]:
+    return {"multi_select": {"options": [{"name": o} for o in options]}}
+
+
 def database_schema() -> Dict[str, Dict[str, Any]]:
     """Return the Notion property definitions for the WarmApply database.
 
@@ -82,7 +89,7 @@ def database_schema() -> Dict[str, Dict[str, Any]]:
         LOCATION: {"rich_text": {}},
         JOB_LINK: {"url": {}},
         MATCH_SCORE: {"number": {"format": "number"}},
-        CHANNEL: _select_def(CHANNEL_OPTIONS),
+        CHANNEL: _multi_select_def(CHANNEL_OPTIONS),  # dual-channel: portal AND/OR email
         HR_NAME: {"rich_text": {}},
         HR_EMAIL: {"email": {}},
         EMAIL_CONFIDENCE: {"number": {"format": "number"}},
@@ -95,6 +102,8 @@ def database_schema() -> Dict[str, Dict[str, Any]]:
         APPLIED_DATE: {"date": {}},
         REPLY: {"checkbox": {}},
         FOLLOW_UP_SENT: {"checkbox": {}},
+        COLD_EMAILED: {"checkbox": {}},
+        BOUNCED: {"checkbox": {}},
     }
 
 
@@ -138,6 +147,11 @@ def _select(value: Optional[str]) -> Dict[str, Any]:
     return {"select": {"name": value} if value else None}
 
 
+def _multi_select(values: List[str]) -> Dict[str, Any]:
+    clean = [v.strip() for v in (values or []) if v and v.strip()]
+    return {"multi_select": [{"name": v} for v in clean]}
+
+
 def _date(value: Optional[str]) -> Dict[str, Any]:
     value = (value or "").strip() if isinstance(value, str) else value
     return {"date": {"start": value} if value else None}
@@ -151,13 +165,36 @@ def _checkbox(value: Any) -> Dict[str, Any]:
 # row_properties(job) — map an enriched+tailored job to Notion property values
 # ---------------------------------------------------------------------------
 
-def _derive_channel(email: Dict[str, Any]) -> str:
-    """email channel if we have a usable, verified address; else portal."""
-    addr = (email or {}).get("address")
-    source = (email or {}).get("source")
-    if addr and source and source != "none":
-        return "email"
-    return "portal"
+def _resolve_email(job: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve the dual-channel email fields, backward-compatible with the old
+    `job["email"]` block. Returns {address, source, confidence, recipient_name,
+    verified_mailbox, cold_email}."""
+    email = job.get("email") or {}
+    address = job.get("contact_email") or email.get("address") or None
+    source = job.get("email_source") or email.get("source") or ("none" if not address else "career-page")
+    if "cold_email" in job:
+        cold = bool(job.get("cold_email"))
+    else:
+        cold = bool(address and source != "none")
+    return {
+        "address": address,
+        "source": source if address else "none",
+        "confidence": email.get("confidence"),
+        "recipient_name": email.get("recipient_name") or job.get("recruiter_name"),
+        "verified_mailbox": job.get("verified_mailbox", email.get("verified")),
+        "cold_email": cold,
+    }
+
+
+def _derive_channels(job: Dict[str, Any], resolved_email: Dict[str, Any]) -> List[str]:
+    """Dual-channel: portal is always on for a surviving job; email if a cold email
+    will go out. Returns a multi_select list like ["portal", "email"]."""
+    channels: List[str] = []
+    if job.get("apply_portal", True):
+        channels.append("portal")
+    if resolved_email.get("cold_email"):
+        channels.append("email")
+    return channels or ["portal"]
 
 
 def row_properties(job: Dict[str, Any],
@@ -177,8 +214,8 @@ def row_properties(job: Dict[str, Any],
     """
     company_analysis = job.get("company_analysis") or {}
     match = job.get("match") or {}
-    email = job.get("email") or {}
     files = job.get("files") or {}
+    email = _resolve_email(job)
 
     website = company_analysis.get("website") or job.get("company_domain")
 
@@ -189,7 +226,7 @@ def row_properties(job: Dict[str, Any],
         LOCATION: _rich_text(job.get("location")),
         JOB_LINK: _url(job.get("url")),
         MATCH_SCORE: _number(match.get("score")),
-        CHANNEL: _select(_derive_channel(email)),
+        CHANNEL: _multi_select(_derive_channels(job, email)),
         HR_NAME: _rich_text(email.get("recipient_name")),
         HR_EMAIL: _email(email.get("address")),
         EMAIL_CONFIDENCE: _number(email.get("confidence")),
@@ -203,4 +240,6 @@ def row_properties(job: Dict[str, Any],
         APPLIED_DATE: _date(job.get("applied_date")),
         REPLY: _checkbox(job.get("reply", False)),
         FOLLOW_UP_SENT: _checkbox(job.get("follow_up_sent", False)),
+        COLD_EMAILED: _checkbox(email.get("cold_email")),
+        BOUNCED: _checkbox(job.get("bounced", False)),
     }

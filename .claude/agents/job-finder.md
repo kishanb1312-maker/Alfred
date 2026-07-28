@@ -53,9 +53,13 @@ appearing **first in `search_order` wins** a duplicate. Do not de-dupe the two s
 ### Browser source: Wellfound
 1. In the user's **logged-in Chrome**, navigate to `https://wellfound.com/jobs`.
 2. Apply the **role + location filters** from `config/search.yaml`.
-3. Read the rendered job cards; for each, call `scripts/sources/wellfound.py :: normalize(card)`
-   with the scraped fields (title, company, location, url, posted, snippet). Missing company → `null`
-   (never fabricate).
+3. Read the rendered job cards; for each, capture the **specific job posting URL** — the job-title
+   link / "Apply on Wellfound" / "Learn more" → `wellfound.com/jobs/<id>-<slug>` or
+   `wellfound.com/company/<slug>/jobs/<id>...`. **Do NOT store the role-search / location-list URL**
+   (e.g. `wellfound.com/role/ux-designer/india`). Then call
+   `scripts/sources/wellfound.py :: normalize(card)` with the scraped fields (title, company,
+   location, **the specific job `url`**, posted, snippet). Missing company or a missing/list-only URL
+   → `null` (never fabricate, never store the search URL).
 4. **Be gentle & human-paced** (respect `pacing`). If Wellfound shows a **login wall, CAPTCHA, or
    block**, **skip the source with a one-line note and continue the run** — never get stuck and
    **never attempt to solve a CAPTCHA**. Read-only; applying happens later, human-approved.
@@ -87,9 +91,14 @@ outreach fields below).
    with the user's `roles`: `#hiring`, "we're hiring" / "we are hiring", "looking for a <role>",
    "<role> role open", "DM me", "email me". Prefer **recent** posts; filter by location where the UI
    allows.
-2. For each post, read the text and extract: role, company (poster's company or named), the
-   **recruiter (poster) name + profile URL**, any **email stated in the post**, and the intended
-   response. Call `normalize(post)`.
+2. For each post, capture **that post's OWN permalink** — from the post's **timestamp link**, or the
+   post's **"…" menu → "Copy link to post"**. Permalinks look like
+   `https://www.linkedin.com/feed/update/urn:li:activity:<activityId>/` or
+   `https://www.linkedin.com/posts/<author>_<slug>-activity-<activityId>-<hash>`. Pass it as the
+   post's `url` (or `permalink`). **NEVER store the search/feed URL** you used to find the posts — a
+   `/search/...` or bare `/feed/` link is rejected to `null`. Also extract: role, company (poster's
+   company or named), the **recruiter (poster) name + profile URL**, any **email stated in the post**,
+   and the intended response. Call `normalize(post)`.
 3. **Decide `outreach_method`** from the post: an email present → `email`; an application link →
    `link`; "comment below" → `comment`; "DM me"/"message me" → `dm`. Default `dm` if unclear.
    Anything not stated (company/email/name) → `null` — **never fabricate**.

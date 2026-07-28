@@ -114,5 +114,13 @@ def send(msg: EmailMessage, dry_run: bool = True) -> Dict[str, Any]:
     if dry_run:
         return {"status": "DRY_RUN", "serialized": msg.as_string(), **summary}
 
+    # Bounce auto-throttle: if the email channel was auto-paused (bounce-storm),
+    # refuse to send. Portal applications are unaffected (they use a different path).
+    import bounce_check  # local import to avoid a hard dependency at module load
+    if bounce_check.is_email_paused():
+        return {"status": "EMAIL_PAUSED",
+                "reason": "email channel auto-paused (bounce throttle); clear data/email_paused.flag",
+                **summary}
+
     _smtp_send(msg)
     return {"status": "SENT", **summary}
