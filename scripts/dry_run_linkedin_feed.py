@@ -56,6 +56,11 @@ POSTS = [
         "recruiter_profile": "https://www.linkedin.com/in/billl",
         "url": "https://www.linkedin.com/posts/billl-activity-444",
     },
+    {   # design role BUT only a search URL → url must be rejected to null
+        "id": "999", "title": "Product Designer", "company": "SearchCo",
+        "text": "We're hiring a Product Designer! DM me.",
+        "url": "https://www.linkedin.com/search/results/content/?keywords=product%20designer",
+    },
     {   # non-design → filtered out
         "id": "555", "title": "Sales Manager", "company": "Umbrella",
         "text": "We're hiring a Sales Manager — DM me.",
@@ -103,10 +108,10 @@ def main() -> int:
     print("Assertions:")
     failures = []
 
-    # 1: role filter kept 4 design posts, dropped Sales Manager.
+    # 1: role filter kept the design posts, dropped Sales Manager.
     ids = [l["job_id"] for l in leads]
     expected = ["linkedin_feed:111", "linkedin_feed:222",
-                "linkedin_feed:333", "linkedin_feed:444"]
+                "linkedin_feed:333", "linkedin_feed:444", "linkedin_feed:999"]
     ok_filter = ids == expected
     failures += [] if ok_filter else [f"role filter wrong: {ids}"]
     print(f"  [{'OK' if ok_filter else 'XX'}] role filter kept design posts, dropped Sales ({ids})")
@@ -161,6 +166,18 @@ def main() -> int:
     failures += [] if ok_dispatch else [f"dispatch wrong: {status}"]
     print(f"  [{'OK' if ok_dispatch else 'XX'}] dispatch → linkedin_feed status='browser' "
           f"(no network); python source still runs")
+
+    # 9: url = the post's OWN permalink (kept), not the search URL.
+    u111 = by_id["linkedin_feed:111"]["url"]
+    ok_permalink = bool(u111) and ("/posts/" in u111 or "/feed/update/urn:li:activity:" in u111 or "activity" in u111)
+    failures += [] if ok_permalink else [f"real permalink not kept: {u111!r}"]
+    print(f"  [{'OK' if ok_permalink else 'XX'}] real permalink kept as url ({u111})")
+
+    # 10: a post whose only url is a /search/ URL → url rejected to null.
+    u999 = by_id["linkedin_feed:999"]["url"]
+    ok_search_null = u999 is None
+    failures += [] if ok_search_null else [f"search URL not rejected: {u999!r}"]
+    print(f"  [{'OK' if ok_search_null else 'XX'}] search-URL input → url=null (not stored)")
 
     print("\n" + "=" * 74)
     if failures:

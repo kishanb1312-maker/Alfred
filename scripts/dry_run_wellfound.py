@@ -56,6 +56,11 @@ CARDS = [
         "url": "https://wellfound.com/jobs/444-ui-designer",
         "posted": "2026-07-25", "snippet": "Short gig for a UI Designer.",
     },
+    {
+        "id": "role1", "title": "UX Designer", "company": "ListCo",  # role-list URL → null
+        "url": "https://wellfound.com/role/ux-designer/india",
+        "posted": "2026-07-24", "snippet": "Role search page, not a specific job.",
+    },
 ]
 
 ROLES = ["Product Designer", "UX Designer", "UI Designer"]
@@ -101,14 +106,15 @@ def main() -> int:
     print("Assertions:")
     failures = []
 
-    # A1: role filter kept 3 design roles (ids from URL slug), dropped Backend.
+    # A1: role filter kept the design roles (ids from job URL), dropped Backend.
     ids = [j["job_id"] for j in jobs]
     expected = ["wellfound:12345-senior-product-designer",
-                "wellfound:222-ux-designer", "wellfound:444-ui-designer"]
+                "wellfound:222-ux-designer", "wellfound:444-ui-designer",
+                "wellfound:role1"]
     ok_filter = ids == expected
     failures += [] if ok_filter else [f"role filter/id wrong: {ids}"]
     print(f"  [{'OK' if ok_filter else 'XX'}] role filter kept design roles, dropped Backend "
-          f"(ids from URL slug)")
+          f"(ids from job URL)")
 
     # A2: canonical shape + source + prefix + no internal keys.
     shape_ok = all(set(j.keys()) == CANONICAL_KEYS for j in jobs)
@@ -158,6 +164,18 @@ def main() -> int:
     failures += [] if ok_py else ["python source did not run alongside browser source"]
     print(f"  [{'OK' if ok_py else 'XX'}] Python source still runs via dispatch "
           f"(fakeapi ok, returned {len(fresh)} job)")
+
+    # D1: a specific job URL is kept as url.
+    u1 = by_id["wellfound:12345-senior-product-designer"]["url"]
+    ok_joburl = u1 == "https://wellfound.com/jobs/12345-senior-product-designer"
+    failures += [] if ok_joburl else [f"specific job URL not kept: {u1!r}"]
+    print(f"  [{'OK' if ok_joburl else 'XX'}] specific job URL kept as url ({u1})")
+
+    # D2: a role-list/search URL → url rejected to null.
+    u_role = by_id["wellfound:role1"]["url"]
+    ok_role_null = u_role is None
+    failures += [] if ok_role_null else [f"role-list URL not rejected: {u_role!r}"]
+    print(f"  [{'OK' if ok_role_null else 'XX'}] role-list URL input → url=null (not stored)")
 
     print("\n" + "=" * 74)
     if failures:
