@@ -51,6 +51,13 @@ FAKE_JOB = {
         "Summary rewrite + 2 bullet re-emphases (Kubernetes, AWS, Terraform, "
         "Python, CI/CD — all already in the resume). Gap: JD lists Go (not added)."
     ),
+    # dual-channel fields
+    "apply_portal": True,
+    "cold_email": True,
+    "contact_email": "priya.sharma@globex.example",
+    "email_source": "hunter",
+    "verified_mailbox": True,
+    "bounced": False,
 }
 
 
@@ -116,20 +123,21 @@ def main() -> int:
         sel = row[prop].get("select")
         return sel["name"] if sel else None
 
-    vocab_checks = [
-        (ns.CHANNEL, ns.CHANNEL_OPTIONS),
-        (ns.EMAIL_SOURCE, ns.EMAIL_SOURCE_OPTIONS),
-        (ns.STATUS, ns.STATUS_OPTIONS),
-    ]
+    def _multi_names(prop):
+        return [o["name"] for o in row[prop].get("multi_select", [])]
+
     bad_vocab = []
-    for prop, allowed in vocab_checks:
+    for prop, allowed in [(ns.EMAIL_SOURCE, ns.EMAIL_SOURCE_OPTIONS), (ns.STATUS, ns.STATUS_OPTIONS)]:
         val = _sel_name(prop)
         if val is not None and val not in allowed:
             bad_vocab.append(f"{prop}={val!r} not in {allowed}")
+    for name in _multi_names(ns.CHANNEL):  # Channel is multi_select now
+        if name not in ns.CHANNEL_OPTIONS:
+            bad_vocab.append(f"Channel={name!r} not in {ns.CHANNEL_OPTIONS}")
     if bad_vocab:
         failures.append("select vocab violations: " + "; ".join(bad_vocab))
     print(f"  [{'OK' if not bad_vocab else 'XX'}] select values within controlled vocab "
-          f"(Channel={_sel_name(ns.CHANNEL)}, "
+          f"(Channel={_multi_names(ns.CHANNEL)}, "
           f"Email Source={_sel_name(ns.EMAIL_SOURCE)}, "
           f"Status={_sel_name(ns.STATUS)})")
 
@@ -139,7 +147,20 @@ def main() -> int:
         failures.append(f"default status is {_sel_name(ns.STATUS)!r}, expected 'Ready for Review'")
     print(f"  [{'OK' if ok_status else 'XX'}] default Status = 'Ready for Review'")
 
-    # (f) No live calls were made — this script imports nothing network-y.
+    # (f) Dual-channel: Channel is multi_select with BOTH portal + email; Cold
+    #     Emailed + Bounced checkboxes present and correct.
+    chans = _multi_names(ns.CHANNEL)
+    ok_dual = (ns.CHANNEL in schema and "multi_select" in schema[ns.CHANNEL]
+               and set(chans) == {"portal", "email"}
+               and row[ns.COLD_EMAILED] == {"checkbox": True}
+               and row[ns.BOUNCED] == {"checkbox": False})
+    if not ok_dual:
+        failures.append(f"dual-channel mapping wrong: Channel={chans}, "
+                        f"ColdEmailed={row.get(ns.COLD_EMAILED)}, Bounced={row.get(ns.BOUNCED)}")
+    print(f"  [{'OK' if ok_dual else 'XX'}] dual-channel: Channel(multi)={chans}, "
+          f"Cold Emailed=True, Bounced=False")
+
+    # (g) No live calls were made — this script imports nothing network-y.
     print("  [OK] no Notion/MCP/network calls made (offline mapping only)")
 
     print("\n" + "=" * 74)

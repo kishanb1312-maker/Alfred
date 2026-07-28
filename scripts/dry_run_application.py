@@ -1,16 +1,20 @@
-"""WarmApply · Application Agent DRY-RUN (OFFLINE — asserts NO send/submit).
+"""WarmApply · Application Agent DRY-RUN (OFFLINE — dual-channel + bounce throttle).
 
-Simulates the application agent's processing loop for a small approved queue
-(1 email job + 1 portal job) with dry_run=True, and separately proves /pause halts
-everything. NOTHING is sent or submitted:
+Simulates the application agent's DUAL-CHANNEL loop: every approved job gets BOTH a
+portal application AND (if an email was found) a cold email — including single
+best-guess addresses (the user accepted the bounce risk). NOTHING is sent/submitted:
 
   - email_send._smtp_send (the ONLY SMTP chokepoint) is monkeypatched to RAISE.
-  - GMAIL_APP_PASSWORD is left unset, so a real login is impossible anyway.
-  - the portal job is only ever marked "fill + hand to human for final click";
-    no browser is driven from this script.
+  - bounce_check._fetch_bounce_messages (the ONLY IMAP call) is never invoked —
+    bounce messages are injected.
+  - GMAIL_APP_PASSWORD is unset; the portal is only ever "fill + hand to human".
 
-Shows: email MIME built with attachments (DRY_RUN, not sent), portal handed to the
-human, daily caps decremented, and a paused case that halts. Assertions at the end.
+Scenarios:
+  1. normal, dry_run=True  → both channels act; guessed email still queued; caps drop.
+  2. global /pause         → halts everything.
+  3. email-channel paused  → portal still runs, cold emails skipped (EMAIL_PAUSED).
+  4. bounce auto-throttle  → a simulated high-bounce batch trips the throttle, sets
+                             data/email_paused.flag, and returns a Telegram warning.
 """
 
 from __future__ import annotations
@@ -20,207 +24,252 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bounce_check  # noqa: E402
 import daily_caps  # noqa: E402
 import email_send  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
-# Network tripwire: replace the SMTP chokepoint with a raising spy.
+# Network tripwires: SMTP + IMAP must never be called.
 # ---------------------------------------------------------------------------
-
-class _NetworkTouched(Exception):
-    pass
-
 
 _smtp_calls = []
 
 
 def _spy_smtp(msg):
     _smtp_calls.append(msg["To"])
-    raise _NetworkTouched("email_send._smtp_send called — dry-run must be offline!")
+    raise AssertionError("email_send._smtp_send called — dry-run must be offline!")
+
+
+def _spy_imap(*a, **k):
+    raise AssertionError("bounce_check._fetch_bounce_messages called — must be offline!")
 
 
 email_send._smtp_send = _spy_smtp
-os.environ.pop("GMAIL_APP_PASSWORD", None)          # ensure no real login is possible
+bounce_check._fetch_bounce_messages = _spy_imap
+os.environ.pop("GMAIL_APP_PASSWORD", None)               # no real login possible
 os.environ["GMAIL_ADDRESS"] = "jobhunt.fake@example.com"  # From: for the demo only
 
 
 # ---------------------------------------------------------------------------
-# Fake approved queue (1 email job + 1 portal job) + tailored files.
+# Fake approved queue — dual-channel jobs (company-research output shape).
 # ---------------------------------------------------------------------------
 
 def build_jobs(workdir: str):
-    resume = os.path.join(workdir, "Resume_GlobexSystems.pdf")
-    cover = os.path.join(workdir, "CoverLetter_GlobexSystems.pdf")
+    resume = os.path.join(workdir, "Resume.pdf")
+    cover = os.path.join(workdir, "CoverLetter.pdf")
     for p, tag in ((resume, b"%PDF-1.4 fake resume\n"), (cover, b"%PDF-1.4 fake cover\n")):
         with open(p, "wb") as fh:
             fh.write(tag)
+    files = {"resume": resume, "cover_letter": cover}
 
-    email_job = {
-        "job_id": "linkedin:FAKE-A1",
-        "company": "Globex Systems",
-        "title": "Site Reliability Engineer",
-        "channel": "email",
-        "email": {"address": "priya.sharma@globex.example", "verified": True,
-                  "source": "hunter", "confidence": 92},
-        "email_subject": "Site Reliability Engineer — Fake Candidate",
-        "email_body": ("Hi Priya,\n\nI'd love to be considered for the SRE role. "
-                       "I've attached my resume and a short cover letter.\n\nBest,\nFake Candidate"),
-        "files": {"resume": resume, "cover_letter": cover},
-    }
-    portal_job = {
-        "job_id": "adzuna:FAKE-B2",
-        "company": "Initech",
-        "title": "Platform Engineer",
-        "channel": "portal",
-        "portal": "linkedin_easy_apply",   # ban-prone → human final click
-        "files": {"resume": resume, "cover_letter": cover},
-    }
-    return [email_job, portal_job]
+    return [
+        {   # A: verified finder email → portal + email
+            "job_id": "linkedin:FAKE-A1", "company": "Globex", "title": "SRE",
+            "apply_portal": True, "portal": "linkedin_easy_apply",
+            "cold_email": True, "contact_email": "priya.sharma@globex.example",
+            "email_source": "hunter", "verified_mailbox": True,
+            "email_subject": "SRE — Fake Candidate",
+            "email_body": "Hi Priya,\n\nI'd love to be considered.\n\nBest,\nFake Candidate",
+            "files": files,
+        },
+        {   # B: GUESSED email (pattern) → portal + email (still sends, per user choice)
+            "job_id": "remoteok:FAKE-C3", "company": "Zephyr Labs", "title": "Platform",
+            "apply_portal": True, "portal": "greenhouse",
+            "cold_email": True, "contact_email": "alex.kim@zephyr.example",
+            "email_source": "pattern", "verified_mailbox": False,
+            "email_subject": "Platform Engineer — Fake Candidate",
+            "email_body": "Hi Alex,\n\nI'd love to be considered.\n\nBest,\nFake Candidate",
+            "files": files,
+        },
+        {   # C: no email found → portal ONLY
+            "job_id": "indeed:FAKE-D4", "company": "Initech", "title": "DevOps",
+            "apply_portal": True, "portal": "indeed",
+            "cold_email": False, "contact_email": None,
+            "email_source": "none", "verified_mailbox": False,
+            "files": files,
+        },
+    ]
 
 
 # ---------------------------------------------------------------------------
-# The application-agent processing loop (offline simulation).
+# Dual-channel processing loop (offline simulation of the application agent).
 # ---------------------------------------------------------------------------
 
-def process_queue(jobs, *, dry_run, paused, caps, counts_path):
-    """Mirrors the agent's guarded loop. Returns a list of per-job log dicts."""
+def process_queue(jobs, *, dry_run, paused, caps, counts_path, email_flag_path):
+    """For each job do BOTH portal + email (guarded). Returns (log, sent_recipients)."""
     log = []
+    sent_recipients = []
 
-    # Precondition 1: /pause halts EVERYTHING before any work.
-    if paused:
-        log.append({"halted": True, "reason": "paused (data/paused.flag present)"})
-        return log
+    if paused:  # global /pause halts EVERYTHING
+        return [{"halted": True, "reason": "paused (data/paused.flag present)"}], []
+
+    email_paused = bounce_check.is_email_paused(path=email_flag_path)
 
     for job in jobs:
         jid = job["job_id"]
-        channel = job["channel"]
+        actions = {"job_id": jid, "company": job["company"], "portal": None, "email": None}
 
-        if channel == "email":
-            # Guardrail: only verified, non-'none' recipient addresses.
-            em = job.get("email") or {}
-            if not em.get("verified") or em.get("source") in (None, "", "none") or not em.get("address"):
-                log.append({"job_id": jid, "channel": "email", "action": "SKIP",
-                            "reason": "recipient email not verified"})
-                continue
-            # Guardrail: daily email cap.
-            if daily_caps.remaining("email", caps["emails_per_day"], path=counts_path) <= 0:
-                log.append({"job_id": jid, "channel": "email", "action": "SKIP",
-                            "reason": "emails_per_day cap reached"})
-                continue
-
-            msg = email_send.build_message(
-                to=em["address"], subject=job["email_subject"], body=job["email_body"],
-                attachments=[job["files"]["resume"], job["files"]["cover_letter"]])
-            result = email_send.send(msg, dry_run=dry_run)   # dry_run → no connection
-            new_count = daily_caps.record("email", path=counts_path)
-            log.append({"job_id": jid, "channel": "email", "action": result["status"],
-                        "to": result["to"], "subject": result["subject"],
-                        "attachments": result["attachments"], "size_bytes": result["size_bytes"],
-                        "email_count_today": new_count,
-                        "serialized_head": result.get("serialized", "").splitlines()[:8]})
-
-        elif channel == "portal":
-            # Guardrail: daily apply cap.
+        # --- (a) Portal application (always, if apply_portal) ---
+        if job.get("apply_portal", True):
             if daily_caps.remaining("apply", caps["applies_per_day"], path=counts_path) <= 0:
-                log.append({"job_id": jid, "channel": "portal", "action": "SKIP",
-                            "reason": "applies_per_day cap reached"})
-                continue
-            # Ban-prone portal → fill only; the human does the final Submit click.
-            new_count = daily_caps.record("apply", path=counts_path)
-            log.append({"job_id": jid, "channel": "portal", "portal": job.get("portal"),
-                        "action": "FILL + HAND TO HUMAN FOR FINAL CLICK",
-                        "auto_submit": False, "apply_count_today": new_count})
+                actions["portal"] = {"action": "SKIP", "reason": "applies_per_day cap reached"}
+            else:
+                daily_caps.record("apply", path=counts_path)
+                actions["portal"] = {"action": "FILL + HUMAN FINAL CLICK",
+                                     "portal": job.get("portal"), "auto_submit": False}
 
-    return log
+        # --- (b) Cold email (if cold_email and an address exists) ---
+        if job.get("cold_email") and job.get("contact_email") and job.get("email_source") != "none":
+            if email_paused:
+                actions["email"] = {"action": "SKIP", "reason": "email channel auto-paused (throttle)"}
+            elif daily_caps.remaining("email", caps["emails_per_day"], path=counts_path) <= 0:
+                actions["email"] = {"action": "SKIP", "reason": "emails_per_day cap reached"}
+            else:
+                msg = email_send.build_message(
+                    to=job["contact_email"], subject=job["email_subject"],
+                    body=job["email_body"],
+                    attachments=[job["files"]["resume"], job["files"]["cover_letter"]])
+                result = email_send.send(msg, dry_run=dry_run)
+                daily_caps.record("email", path=counts_path)
+                sent_recipients.append(job["contact_email"])
+                actions["email"] = {"action": result["status"], "to": result["to"],
+                                    "guessed": job["email_source"] == "pattern",
+                                    "attachments": result.get("attachments")}
+        elif not job.get("cold_email"):
+            actions["email"] = {"action": "NONE", "reason": "no email found (portal-only)"}
+
+        log.append(actions)
+    return log, sent_recipients
 
 
 def _print_log(log):
-    for entry in log:
-        if entry.get("halted"):
-            print(f"  ⛔ HALTED — {entry['reason']}")
+    for e in log:
+        if e.get("halted"):
+            print(f"  ⛔ HALTED — {e['reason']}")
             continue
-        if entry["action"] == "SKIP":
-            print(f"  ⏭️  {entry['job_id']} [{entry['channel']}] SKIP — {entry['reason']}")
-        elif entry["channel"] == "email":
-            print(f"  ✉️  {entry['job_id']} [email] {entry['action']} → {entry['to']}")
-            print(f"       subject : {entry['subject']}")
-            print(f"       attached: {entry['attachments']}  ({entry['size_bytes']} bytes)")
-            print(f"       email count today: {entry['email_count_today']}")
-            print(f"       serialized (head):")
-            for line in entry["serialized_head"]:
-                print(f"         | {line}")
-        elif entry["channel"] == "portal":
-            print(f"  🖥️  {entry['job_id']} [portal:{entry['portal']}] {entry['action']} "
-                  f"(auto_submit={entry['auto_submit']})")
-            print(f"       apply count today: {entry['apply_count_today']}")
+        print(f"  • {e['job_id']} ({e['company']})")
+        p = e["portal"]
+        if p:
+            if p["action"] == "SKIP":
+                print(f"      portal: SKIP — {p['reason']}")
+            else:
+                print(f"      portal: {p['action']} [{p['portal']}] auto_submit={p['auto_submit']}")
+        m = e["email"]
+        if m:
+            if m["action"] in ("SKIP", "NONE"):
+                print(f"      email : {m['action']} — {m['reason']}")
+            else:
+                flag = " ⚠️guess" if m.get("guessed") else ""
+                print(f"      email : {m['action']} → {m['to']}{flag}")
 
 
 def main() -> int:
     print("=" * 74)
-    print("WarmApply · Application Agent — DRY RUN (OFFLINE; SMTP spy raises on call)")
+    print("WarmApply · Application Agent — DRY RUN (OFFLINE; dual-channel + throttle)")
     print("=" * 74)
 
     workdir = tempfile.mkdtemp(prefix="warmapply_apply_")
     counts_path = os.path.join(workdir, "daily_counts.json")
-    caps = {"applies_per_day": 2, "emails_per_day": 2}
-    jobs = build_jobs(workdir)
+    email_flag = os.path.join(workdir, "email_paused.flag")
+    caps = {"applies_per_day": 5, "emails_per_day": 5}
 
     print(f"\ncaps: {caps}   dry_run=True")
-    print(f"approved queue: {[j['job_id'] for j in jobs]} "
-          f"(1 email, 1 portal)\n")
+    print("approved queue: A(verified email), B(GUESSED email), C(no email) — all dual-channel\n")
 
-    # ---- Scenario 1: normal run (not paused), dry_run=True ----------------
-    print("SCENARIO 1 — not paused, dry_run=True:")
-    print(f"  caps before: email={daily_caps.remaining('email', caps['emails_per_day'], path=counts_path)}, "
-          f"apply={daily_caps.remaining('apply', caps['applies_per_day'], path=counts_path)}")
-    log1 = process_queue(jobs, dry_run=True, paused=False, caps=caps, counts_path=counts_path)
+    # ---- Scenario 1: normal, dry_run=True ---------------------------------
+    print("SCENARIO 1 — not paused, dry_run=True (both channels act):")
+    log1, sent1 = process_queue(build_jobs(workdir), dry_run=True, paused=False,
+                                caps=caps, counts_path=counts_path, email_flag_path=email_flag)
     _print_log(log1)
-    rem_email = daily_caps.remaining("email", caps["emails_per_day"], path=counts_path)
     rem_apply = daily_caps.remaining("apply", caps["applies_per_day"], path=counts_path)
-    print(f"  caps after : email={rem_email}, apply={rem_apply}")
+    rem_email = daily_caps.remaining("email", caps["emails_per_day"], path=counts_path)
+    print(f"  caps after: apply={rem_apply} (5→{rem_apply}), email={rem_email} (5→{rem_email})")
 
-    # ---- Scenario 2: paused → must halt -----------------------------------
-    print("\nSCENARIO 2 — paused (data/paused.flag present):")
-    log2 = process_queue(jobs, dry_run=True, paused=True, caps=caps, counts_path=counts_path)
+    # ---- Scenario 2: global pause -----------------------------------------
+    print("\nSCENARIO 2 — global /pause (data/paused.flag):")
+    log2, _ = process_queue(build_jobs(workdir), dry_run=True, paused=True,
+                            caps=caps, counts_path=counts_path, email_flag_path=email_flag)
     _print_log(log2)
+
+    # ---- Scenario 3: email channel throttled (portal still runs) ----------
+    print("\nSCENARIO 3 — email channel paused (data/email_paused.flag) — portal still runs:")
+    bounce_check.set_email_pause(True, path=email_flag)
+    counts3 = os.path.join(workdir, "counts3.json")
+    log3, sent3 = process_queue(build_jobs(workdir), dry_run=True, paused=False,
+                                caps=caps, counts_path=counts3, email_flag_path=email_flag)
+    _print_log(log3)
+    bounce_check.set_email_pause(False, path=email_flag)
+
+    # ---- Scenario 4: bounce auto-throttle on a high-bounce batch ----------
+    print("\nSCENARIO 4 — bounce auto-throttle (simulated high-bounce batch):")
+    sent_batch = ["a@x.example", "b@y.example", "c@z.example"]
+    fake_bounces = [
+        {"from": "mailer-daemon@googlemail.com", "subject": "Delivery Status Notification (Failure)",
+         "body": "failed: a@x.example"},
+        {"from": "Mail Delivery Subsystem <mailer-daemon@googlemail.com>",
+         "subject": "Undeliverable", "body": "b@y.example not found"},
+        {"from": "postmaster@z.example", "subject": "Returned mail", "body": "c@z.example rejected"},
+    ]
+    report = bounce_check.apply_throttle(sent_batch, fake_bounces, path=email_flag)
+    print(f"  sent={len(sent_batch)}  bounced={report['bounced']}")
+    print(f"  throttle: tripped={report['throttle']['tripped']} "
+          f"rate={report['throttle']['bounce_rate']} ({report['throttle']['reason']})")
+    print(f"  email paused now: {bounce_check.is_email_paused(path=email_flag)}")
+    if report["warning"]:
+        print("  Telegram warning →")
+        for line in report["warning"].splitlines():
+            print(f"      {line}")
+    bounce_check.set_email_pause(False, path=email_flag)  # clean up
 
     # ---- Assertions --------------------------------------------------------
     print("\n" + "-" * 74)
     print("Assertions:")
     failures = []
+    by_id1 = {e["job_id"]: e for e in log1}
 
-    email_entry = next((e for e in log1 if e.get("channel") == "email"), None)
-    portal_entry = next((e for e in log1 if e.get("channel") == "portal"), None)
+    # 1: both channels acted for A and B; C is portal-only.
+    a, b, c = by_id1["linkedin:FAKE-A1"], by_id1["remoteok:FAKE-C3"], by_id1["indeed:FAKE-D4"]
+    ok_dual = (a["portal"]["action"].startswith("FILL") and a["email"]["action"] == "DRY_RUN"
+               and b["portal"]["action"].startswith("FILL") and b["email"]["action"] == "DRY_RUN"
+               and c["portal"]["action"].startswith("FILL") and c["email"]["action"] == "NONE")
+    failures += [] if ok_dual else ["dual-channel actions wrong"]
+    print(f"  [{'OK' if ok_dual else 'XX'}] A+B do BOTH (portal+email DRY_RUN); C portal-only")
 
-    ok_email_dry = bool(email_entry) and email_entry["action"] == "DRY_RUN"
-    failures += [] if ok_email_dry else ["email was not DRY_RUN"]
-    print(f"  [{'OK' if ok_email_dry else 'XX'}] email built + status DRY_RUN (not sent)")
+    # 2: the GUESSED email (B) is still sent (per the user's choice), flagged.
+    ok_guess = b["email"]["action"] == "DRY_RUN" and b["email"]["guessed"] is True
+    failures += [] if ok_guess else ["guessed email not queued/flagged"]
+    print(f"  [{'OK' if ok_guess else 'XX'}] guessed email still queued + flagged ⚠️ (B)")
 
-    ok_attach = bool(email_entry) and len(email_entry["attachments"]) == 2
-    failures += [] if ok_attach else ["email should carry 2 attachments"]
-    print(f"  [{'OK' if ok_attach else 'XX'}] email MIME carries 2 attachments "
-          f"({email_entry['attachments'] if email_entry else None})")
+    # 3: caps decremented for BOTH channels (3 portal, 2 email).
+    ok_caps = rem_apply == 2 and rem_email == 3   # 5-3 apply, 5-2 email
+    failures += [] if ok_caps else [f"caps wrong (apply={rem_apply}, email={rem_email})"]
+    print(f"  [{'OK' if ok_caps else 'XX'}] caps: 3 portal applies + 2 emails recorded "
+          f"(apply→{rem_apply}, email→{rem_email})")
 
-    ok_portal = bool(portal_entry) and portal_entry["auto_submit"] is False \
-        and "HUMAN" in portal_entry["action"]
-    failures += [] if ok_portal else ["portal job must be fill + human final click"]
-    print(f"  [{'OK' if ok_portal else 'XX'}] portal job = fill + hand to human "
-          f"(auto_submit={portal_entry['auto_submit'] if portal_entry else None})")
+    # 4: global pause halts everything.
+    ok_pause = len(log2) == 1 and log2[0].get("halted")
+    failures += [] if ok_pause else ["global pause did not halt"]
+    print(f"  [{'OK' if ok_pause else 'XX'}] global /pause halts everything")
 
-    ok_caps = (rem_email == 1 and rem_apply == 1)
-    failures += [] if ok_caps else [f"caps not decremented (email={rem_email}, apply={rem_apply})"]
-    print(f"  [{'OK' if ok_caps else 'XX'}] daily caps decremented "
-          f"(email 2→{rem_email}, apply 2→{rem_apply})")
+    # 5: email-channel pause skips emails but portal still runs.
+    a3 = {e["job_id"]: e for e in log3}["linkedin:FAKE-A1"]
+    ok_epause = a3["portal"]["action"].startswith("FILL") and a3["email"]["action"] == "SKIP" \
+        and len(sent3) == 0
+    failures += [] if ok_epause else ["email-channel pause behaviour wrong"]
+    print(f"  [{'OK' if ok_epause else 'XX'}] email-paused: portal runs, cold emails skipped")
 
-    ok_paused = len(log2) == 1 and log2[0].get("halted") is True
-    failures += [] if ok_paused else ["paused run did not halt cleanly"]
-    print(f"  [{'OK' if ok_paused else 'XX'}] /pause halts before any action")
+    # 6: bounce throttle trips on the high-bounce batch and sets the flag.
+    ok_throttle = report["throttle"]["tripped"] and report["paused_set"] and report["warning"]
+    failures += [] if ok_throttle else ["bounce throttle did not trip"]
+    print(f"  [{'OK' if ok_throttle else 'XX'}] bounce throttle tripped + warned "
+          f"({len(report['bounced'])}/3 bounced)")
 
+    # 7: zero network (SMTP + IMAP spies never fired).
     ok_offline = len(_smtp_calls) == 0
-    failures += [] if ok_offline else [f"SMTP chokepoint called: {_smtp_calls}"]
-    print(f"  [{'OK' if ok_offline else 'XX'}] NO SMTP/HTTP/browser calls "
-          f"(_smtp_send spy invoked {len(_smtp_calls)} times)")
+    failures += [] if ok_offline else [f"SMTP called: {_smtp_calls}"]
+    print(f"  [{'OK' if ok_offline else 'XX'}] NO network (SMTP invoked {len(_smtp_calls)}×, "
+          f"IMAP 0×)")
 
     print("\n" + "=" * 74)
     if failures:
@@ -229,8 +278,8 @@ def main() -> int:
             print(f"  - {f}")
         print("=" * 74)
         return 1
-    print("RESULT: PASS ✅ — email built not sent, portal deferred to human, "
-          "caps enforced, pause honored, fully offline.")
+    print("RESULT: PASS ✅ — dual-channel both actions, guesses sent, caps + pauses + "
+          "bounce throttle enforced, fully offline.")
     print("=" * 74)
     return 0
 

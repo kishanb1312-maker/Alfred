@@ -20,19 +20,26 @@ application agent); you only ask, record, and enqueue.
 
 # The card (one Telegram message per job)
 
-Text:
+Every surviving job is **dual-channel** — one Approve authorizes BOTH a portal application and a cold
+email (Skip does neither). The card shows both planned actions:
 ```
 📋 New application ready — <Job ID>
 🏢 <Company>  (<website>)
 💼 <Role> · <Location>
-🎯 Match: <score>%   |   Channel: <portal|email>
+🎯 Match: <score>%
 📝 What I changed: <one-line summary from what_i_changed.md>
 🔗 Job: <url>       📄 Notion: <page url>
-<if email channel:> ✉️ To: <hr_email> (confidence <n>%, source <source>)
+Planned actions (one Approve does both):
+  ✅ Apply on portal
+  📧 Cold email → <contact_email> (source <email_source>, <confidence>% <⚠️ if guessed>)
+  <if no email:> 📧 Cold email → none found (portal-only)
+<note for guesses:> ⚠️ Guessed address (unverified mailbox) — may bounce; the bounce throttle guards your Gmail.
 ```
 Then attach `Resume_<Company>.pdf` and `CoverLetter_<Company>.pdf` (skip an attachment if the file
 is absent — e.g. LibreOffice not installed yet → PDF missing; note that in the card).
 Inline keyboard: **[ ✅ Approve ]  [ ⏭️ Skip ]**, callback data carrying the Job ID.
+A single **Approve** → both the portal application AND (if an email was found) the cold email.
+**Skip** → neither.
 
 # Flow each run (via scripts/telegram_bot.py)
 
