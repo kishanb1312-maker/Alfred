@@ -6,14 +6,9 @@ config/profile.yaml
 # Tailored application artifacts (generated per job)
 output/
 
-# Runtime data / stores
-data/applied_history.json
-data/*.dryrun.json
-data/notion_state.json
-data/telegram_state.json
-data/approved_queue.json
-data/paused.flag
-data/daily_counts.json
+# Runtime data + personal files (resume, cover letters, stores) — never commit anything in data/
+data/*
+!data/.gitkeep
 
 # Python
 __pycache__/
