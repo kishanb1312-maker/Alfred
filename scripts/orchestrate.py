@@ -8,7 +8,7 @@ set of pure helpers the main Claude Code session leans on while executing RUNBOO
     - run_summary(stats)   format the end-of-run report
 
 All AI/network/browser steps happen when the MAIN SESSION invokes the worker
-subagents in .claude/agents/ — never in this file.
+subagents in agents/ — never in this file.
 
 CLI:
     python scripts/orchestrate.py --preflight        # checks; nonzero exit if blocked
@@ -28,11 +28,15 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SEARCH_CONFIG = os.path.join(_REPO_ROOT, "config", "search.yaml")
-PROFILE_CONFIG = os.path.join(_REPO_ROOT, "config", "profile.yaml")
-RESUME_GLOB = os.path.join(_REPO_ROOT, "data", "*.docx")
-PAUSE_FLAG = os.path.join(_REPO_ROOT, "data", "paused.flag")
+import paths  # single source of truth for all filesystem paths (§4)
+
+# Resolved at import time via paths.py (whose DATA_HOME/CODE_ROOT are computed once
+# when the module is imported), so both the plugin layout (~/.warmapply) and the
+# legacy clone-and-run layout (repo root) work with no change to the logic below.
+SEARCH_CONFIG = paths.search_config()
+PROFILE_CONFIG = paths.profile_config()
+RESUME_GLOB = paths.resume_glob()
+PAUSE_FLAG = paths.pause_flag()
 
 
 # ---------------------------------------------------------------------------

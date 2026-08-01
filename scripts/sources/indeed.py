@@ -6,7 +6,7 @@ passes each card's fields to `normalize()` here. This module is PURE — no netw
 no requests, no browsing.
 
 Indeed is the MOST anti-bot-aggressive source, so the subagent must browse gently
-and skip on any CAPTCHA/block (see .claude/agents/job-finder.md). This module just
+and skip on any CAPTCHA/block (see agents/job-finder.md). This module just
 keeps the scraped output consistent + offline-testable.
 
 Browser-source contract (mirrors wellfound.py):

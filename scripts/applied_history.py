@@ -29,11 +29,13 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Optional
 
 # ---------------------------------------------------------------------------
-# Paths
+# Paths — routed through paths.py (§4). `scripts/` is on sys.path when this runs
+# directly (sys.path[0]) or is imported as a sibling, so a plain import resolves.
 # ---------------------------------------------------------------------------
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-HISTORY_PATH = os.path.join(_REPO_ROOT, "data", "applied_history.json")
+import paths
+
+HISTORY_PATH = paths.applied_history_path()
 
 Job = Dict[str, Any]
 History = Dict[str, Dict[str, Any]]

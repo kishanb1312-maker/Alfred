@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "warmapply",
+  "owner": { "name": "WarmApply" },
+  "description": "WarmApply — a warm, human-in-the-loop job-application assistant packaged as a Claude Code plugin.",
+  "plugins": [
+    {
+      "name": "warmapply",
+      "source": "./",
+      "description": "Warm, human-in-the-loop job-application assistant: finds IT jobs, researches companies, tailors your resume truthfully, and applies via portal or direct recruiter email after you approve each one on Telegram.",
+      "category": "productivity",
+      "keywords": ["job-search", "job-application", "resume", "outreach", "human-in-the-loop"]
+    }
+  ]
+}

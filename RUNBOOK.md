@@ -1,8 +1,12 @@
 # WarmApply — Runbook
 
-This is what the **main Claude Code session** executes when you say **"run WarmApply."** It
-sequences the six worker subagents in `.claude/agents/`. Keep `config/search.yaml : dry_run: true`
-until you've watched a full pass.
+This is what the **main Claude Code session** executes when you say **"run WarmApply"** (or run
+`/warmapply-run`). It sequences the six worker subagents in `agents/`. Keep `dry_run: true` in your
+search config until you've watched a full pass.
+
+> **Paths:** config, resume, and runtime data (`config/*.yaml`, `data/`, `output/`) now resolve under
+> **`~/.warmapply/`** (override with `WARMAPPLY_HOME`); a bare clone falls back to the repo root. The
+> sequence itself is unchanged.
 
 ## Preconditions
 Run `python scripts/orchestrate.py --preflight` first. It confirms `config/search.yaml`,

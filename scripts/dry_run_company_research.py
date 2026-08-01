@@ -23,9 +23,9 @@ import yaml
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import email_verify  # noqa: E402
 import match_score  # noqa: E402
+import paths  # noqa: E402  bundled example config lives under CODE_ROOT
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SEARCH_CFG = os.path.join(_REPO_ROOT, "config", "search.example.yaml")
+SEARCH_CFG = paths.search_example()
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +276,7 @@ def main() -> int:
     threshold = int(cfg.get("match_threshold", 70))
     profile = yaml.safe_load(FAKE_PROFILE_YAML) or {}
 
-    print(f"\nmatch_threshold : {threshold}  (from {os.path.relpath(SEARCH_CFG, _REPO_ROOT)})")
+    print(f"\nmatch_threshold : {threshold}  (from {os.path.relpath(SEARCH_CFG, paths.CODE_ROOT)})")
     print("profile         : [FAKE] in-script sample (profile.yaml shape)")
     print(f"profile skills  : {sorted((profile.get('years_experience') or {}).keys())}")
     print("company analysis + email waterfall are [MOCK] (no live calls).")

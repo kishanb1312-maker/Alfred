@@ -28,11 +28,12 @@ import requests
 # Paths (gitignored runtime state)
 # ---------------------------------------------------------------------------
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_DATA = os.path.join(_REPO_ROOT, "data")
-STATE_PATH = os.path.join(_DATA, "telegram_state.json")
-PAUSE_FLAG = os.path.join(_DATA, "paused.flag")
-APPROVED_QUEUE = os.path.join(_DATA, "approved_queue.json")
+import paths  # single source of truth for paths (§4); sibling import, scripts/ on sys.path
+
+_DATA = paths.data_dir()                       # makedirs target for save_offset/set_pause
+STATE_PATH = paths.telegram_state_path()
+PAUSE_FLAG = paths.pause_flag()
+APPROVED_QUEUE = paths.approved_queue_path()
 
 _API_BASE = "https://api.telegram.org/bot{token}/{method}"
 _HTTP_TIMEOUT = 65  # long-poll friendly

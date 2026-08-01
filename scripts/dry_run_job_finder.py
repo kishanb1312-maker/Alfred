@@ -18,14 +18,15 @@ from __future__ import annotations
 import json
 import os
 import sys
+import tempfile
 
 import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import applied_history  # noqa: E402
+import paths  # noqa: E402  bundled example config lives under CODE_ROOT
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CONFIG_PATH = os.path.join(_REPO_ROOT, "config", "search.example.yaml")
+CONFIG_PATH = paths.search_example()
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +116,7 @@ def main() -> int:
     blacklist = cfg.get("blacklist_companies", []) or []
     cap = (cfg.get("caps") or {}).get("applies_per_day")
 
-    print(f"\nConfig: {os.path.relpath(CONFIG_PATH, _REPO_ROOT)}")
+    print(f"\nConfig: {os.path.relpath(CONFIG_PATH, paths.CODE_ROOT)}")
     print(f"  roles              : {cfg.get('roles')}")
     print(f"  locations          : {cfg.get('locations')}")
     print(f"  sources            : {cfg.get('sources')}")
@@ -126,8 +127,9 @@ def main() -> int:
     jobs = sample_jobs()
     print(f"\nFabricated {len(jobs)} FAKE sample jobs (labeled [FAKE] in snippets).")
 
-    # Use a throwaway store so the demo never pollutes real history.
-    demo_store = os.path.join(_REPO_ROOT, "data", "applied_history.dryrun.json")
+    # Use a throwaway store so the demo never pollutes real history. Kept in the
+    # system temp dir so it is always writable (plugin-mode code dir is read-only).
+    demo_store = os.path.join(tempfile.gettempdir(), "applied_history.dryrun.json")
     if os.path.exists(demo_store):
         os.remove(demo_store)
 
