@@ -19,10 +19,10 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import orchestrate as orch  # noqa: E402
+import paths  # noqa: E402  bundled example configs live under CODE_ROOT
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EX_SEARCH = os.path.join(_REPO_ROOT, "config", "search.example.yaml")
-EX_PROFILE = os.path.join(_REPO_ROOT, "config", "profile.example.yaml")
+EX_SEARCH = paths.search_example()
+EX_PROFILE = paths.profile_example()
 
 
 # ---------------------------------------------------------------------------

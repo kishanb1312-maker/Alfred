@@ -16,7 +16,7 @@ See [`SPEC.md`](SPEC.md) for the full design.
 
 ## How it works
 
-- Your **Claude Code session** orchestrates a set of **subagents** in [`.claude/agents/`](.claude/agents).
+- Your **Claude Code session** orchestrates a set of **subagents** in [`agents/`](agents).
 - **External services** (Notion, LinkedIn/Easy Apply, Telegram, email) are reached through
   **MCP tools** in Claude Code.
 - **Deterministic helpers** (DOCX→PDF, email verification, applied-history, match scoring)
@@ -27,43 +27,65 @@ See [`SPEC.md`](SPEC.md) for the full design.
 
 ## Setup (each user, on their own machine)
 
-1. **Clone** this private repo.
-2. Install Python deps and LibreOffice:
-   ```bash
-   pip install -r requirements.txt
-   # macOS:  brew install --cask libreoffice
-   # Ubuntu: sudo apt-get install libreoffice
-   ```
-3. **Copy the templates** and fill in your own values (these copies are gitignored):
-   ```bash
-   cp .env.example .env
-   cp config/search.example.yaml config/search.yaml
-   cp config/profile.example.yaml config/profile.yaml
-   ```
-4. Put your **master resume** (ATS-simple `.docx`) in `data/`.
-5. Create a **Telegram bot** via `@BotFather`, a **dedicated job-hunt Gmail** (App Password),
-   and a **Hunter.io/Apollo** API key — put them in `.env`.
-6. Connect the **Notion** MCP connector in Claude Code, and use your **real logged-in Chrome**
-   (Claude-in-Chrome) so LinkedIn Easy Apply works without re-login.
+WarmApply installs as a **Claude Code plugin** — no cloning, no manual `cp`, no `.env` editing.
+
+```
+/plugin marketplace add kishanb1312-maker/WarmApply
+/plugin install warmapply@warmapply
+/warmapply-setup      # first-run wizard (guided, conversational)
+/warmapply-run        # run the pipeline (keep dry_run: true for the first pass)
+```
+
+`/warmapply-setup` walks you through everything: it creates a venv and installs deps, initializes
+`~/.warmapply/`, ingests your **master resume** (ATS-simple `.docx`), and collects your search +
+screening answers **in chat**. Your data lives in `~/.warmapply/` (override with `WARMAPPLY_HOME`);
+the plugin code stays read-only and updates with the plugin.
+
+> **Secrets are never typed into chat.** The wizard has you run `warmapply set-secret <KEY>` in your
+> **own terminal** (hidden `getpass` prompt) — Claude never sees a token or password. Non-secret
+> config (roles, locations, screening answers) *is* collected conversationally.
+
+### How each service is connected
+
+**Channel A — secrets in `~/.warmapply/.env`** (set via `warmapply set-secret`, never in chat):
+
+| Service | What you do | Keys |
+|---|---|---|
+| **Telegram** | Create a bot in `@BotFather` (~2 min) → copy the token. Message the bot once, then run `warmapply detect-telegram-chat-id`. **Not MCP** — the app calls the Bot API over HTTP with this token. | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` |
+| **Google / Gmail** | Use a **dedicated** job-hunt Gmail. Enable 2-Step Verification → create an **App Password** for "Mail". **Not OAuth, not MCP** — the app sends via SMTP with this app password. | `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` |
+| **Email finder** *(optional)* | Sign up for Hunter.io (free tier) or Apollo → copy the API key. | `HUNTER_API_KEY` *or* `APOLLO_API_KEY` |
+
+A minimal working setup is the **4 required keys** — and `TELEGRAM_CHAT_ID` auto-fills — so it's
+effectively **3 `set-secret` runs + messaging the bot once**.
+
+**Channel B — MCP connectors** (authorized in Claude Code, no `.env`):
+
+| Service | What you do |
+|---|---|
+| **Notion** | Connect the **Notion** connector in Claude Code (`/mcp` or connector settings). OAuth is per-user; the plugin only *declares* it. The tracker agent then uses the `notion-*` MCP tools. |
+| **LinkedIn / browser** | Just stay logged in to LinkedIn in your real **Chrome**. The Claude-in-Chrome MCP drives it — **no LinkedIn password is ever stored.** |
+
+> **Each user must create their OWN Telegram bot — do not share one.** The bot token is a master
+> secret, and the approval-gate polls `getUpdates` with a saved offset that **consumes** updates.
+> Telegram has one update queue per bot, so a shared bot would deliver one person's Approve/Skip tap to
+> someone else's machine, breaking the human-in-the-loop safety model. Creating a bot is ~2 min in
+> `@BotFather`; the wizard auto-detects your chat ID afterward.
 
 ---
 
 ## Running
 
-Open a Claude Code session in this folder and say **"run WarmApply."** The session follows
-[`RUNBOOK.md`](RUNBOOK.md), which sequences the six worker subagents in
-[`.claude/agents/`](.claude/agents) (reconcile → find → research → tailor → track → approve → apply).
+Run the whole pipeline with **`/warmapply-run`** (or just say **"run WarmApply"**). It follows
+[`RUNBOOK.md`](RUNBOOK.md) — reconcile → find → research → tailor → track → approve → apply → report —
+invoking the six worker subagents in [`agents/`](agents), gated on a preflight check first.
 
-First, sanity-check your setup:
+Check readiness anytime with **`/warmapply-status`** (runs `warmapply doctor` + a run summary): it
+confirms your config, resume, and required secrets are in place and reports whether **dry_run** is on and
+whether **/pause** is set. Keep **`dry_run: true`** until you've watched a full pass.
 
-```bash
-python scripts/orchestrate.py --preflight
-```
-
-This confirms `config/search.yaml`, `config/profile.yaml`, and a master resume in `data/` exist,
-and reports whether **dry_run** is on and whether **/pause** is set. Keep `dry_run: true` in
-`config/search.yaml` until you've watched a full pass. Use `/loop` to repeat while the session
-stays open.
+Run a single stage manually with **`/warmapply-find`**, **`-research`**, **`-tailor`**, **`-track`**,
+**`-approve`**, or **`-apply`** — each still honors `dry_run`, `/pause`, and daily caps. Use `/loop` to
+repeat a run while the session stays open.
 
 Telegram commands: **✅ Approve** / **⏭️ Skip** per job, and **/pause** to halt all sending.
 
@@ -86,9 +108,14 @@ data contract.
 ## Repo layout
 
 ```
-.claude/agents/   Claude Code subagent definitions (the sub-agents)
-scripts/          deterministic Python helpers (run via Bash)
-config/           search + screening-question config (examples committed; real ones gitignored)
-data/             your master resume + applied-history (gitignored)
+.claude-plugin/   plugin.json + marketplace.json (plugin & marketplace manifests)
+agents/           Claude Code subagent definitions (the six workers)
+commands/         slash-command triggers (/warmapply-run, /warmapply-setup, per-stage …)
+skills/           onboarding wizard (warmapply-onboarding)
+scripts/          deterministic Python helpers + the `warmapply` CLI (run via Bash)
+config/           example search + screening config (committed; your real ones live in ~/.warmapply)
+.mcp.json         declares the Notion connector (OAuth per-user; no credentials)
 SPEC.md           full design spec
+
+~/.warmapply/     YOUR data (config, resume, output, .env) — outside the repo, per user
 ```

@@ -41,9 +41,15 @@ USER_AGENT = (
     "(+job-search; contact via app)"
 )
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_SEARCH_CONFIG = os.path.join(_REPO_ROOT, "config", "search.yaml")
-_SEARCH_EXAMPLE = os.path.join(_REPO_ROOT, "config", "search.example.yaml")
+# This module lives in scripts/sources/, so when run directly sys.path[0] is
+# scripts/sources/ — not scripts/. Insert the parent scripts/ dir (mirroring
+# source_dispatch.py) so `import paths` resolves whether run directly or dispatched.
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import paths  # noqa: E402  single source of truth for paths (§4)
+
+_SEARCH_CONFIG = paths.search_config()
+_SEARCH_EXAMPLE = paths.search_example()
 
 _GREENHOUSE_URL = "https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true"
 _LEVER_URL = "https://api.lever.co/v0/postings/{token}?mode=json"

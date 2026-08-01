@@ -27,9 +27,9 @@ import imaplib
 import os
 from typing import Any, Dict, List, Optional
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_DATA = os.path.join(_REPO_ROOT, "data")
-EMAIL_PAUSE_FLAG = os.path.join(_DATA, "email_paused.flag")
+import paths  # single source of truth for paths (§4); sibling import, scripts/ on sys.path
+
+EMAIL_PAUSE_FLAG = paths.email_paused_flag()
 
 _RATE_THRESHOLD = 0.30   # >30% of a run bouncing trips the throttle
 _MIN_BOUNCES = 3         # ...or 3+ bounces regardless of rate

@@ -25,7 +25,7 @@ It is a **friends-circle tool, not a product** — minimal spend, each user runs
 Each friend clones the GitHub repo and runs it inside **their own Claude Code** session using
 **their own Claude subscription**.
 
-- **Sub-agents = real Claude Code subagent files** (`.claude/agents/*.md` with
+- **Sub-agents = real Claude Code subagent files** (`agents/*.md` with
   `name` / `description` / `tools` frontmatter). The session's Claude orchestrates them.
 - **External actions** — Notion, browser/Easy Apply, Telegram, email — run through **MCP tools**
   (already available in Claude Code).
@@ -125,7 +125,7 @@ CLAUDE CODE SESSION (the orchestrator / brain — you kick it off)
 | Concern | Choice |
 |---|---|
 | Brain / AI | **Claude Code session** (user's own subscription) — **no API key, no per-token cost** |
-| Orchestration | Session's Claude drives **Claude Code subagents** (`.claude/agents/*.md`) |
+| Orchestration | Session's Claude drives **Claude Code subagents** (`agents/*.md`) |
 | External actions | **MCP tools** — Notion, browser (Easy Apply), Telegram, email/Zapier |
 | Deterministic helpers | **Python scripts run via Bash** (DOCX→PDF, verify, history, scoring) |
 | Browser automation | Browser MCP / Playwright as needed for Easy Apply + scraping |
@@ -186,7 +186,7 @@ warmapply/
 - Confidence thresholds: **≥85 send · 60–85 flag · <60 skip**
 - Email waterfall: **Option B** (prefer-personal + generic fallback, verify every step)
 - Apply mode: **prepare → Telegram approve → apply** (risky final click stays human)
-- Architecture: **Claude-Code-native**, run **manually**, subagents as `.claude/agents/*.md`
+- Architecture: **Claude-Code-native**, run **manually**, subagents as `agents/*.md`
 
 **🕒 Provide at build/runtime (per user, kept out of the repo):**
 1. **Target roles / job titles** (specific IT roles)

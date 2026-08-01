@@ -20,8 +20,9 @@ import os
 from datetime import date
 from typing import Dict
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-COUNTS_PATH = os.path.join(_REPO_ROOT, "data", "daily_counts.json")
+import paths  # single source of truth for paths (§4); sibling import, scripts/ on sys.path
+
+COUNTS_PATH = paths.daily_counts_path()
 
 
 def _today() -> str:
