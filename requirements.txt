@@ -8,6 +8,8 @@ email-validator>=2.1.0  # syntax validation for discovered emails
 dnspython>=2.6.0        # MX-record check during email verification
 
 # System dependency (NOT pip): LibreOffice — used for DOCX -> PDF conversion
-#   macOS:  brew install --cask libreoffice
-#   Ubuntu: sudo apt-get install libreoffice
+#   Windows: winget install TheDocumentFoundation.LibreOffice
+#   macOS:   brew install --cask libreoffice
+#   Ubuntu:  sudo apt-get install libreoffice
 # Invoked as:  soffice --headless --convert-to pdf <file.docx>
+#   (On Windows the .exe is auto-located under %ProgramFiles%\LibreOffice\program\.)

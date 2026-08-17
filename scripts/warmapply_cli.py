@@ -6,11 +6,18 @@ ONLY place secrets ever enter WarmApply, and they enter via getpass (no echo) �
 never typed into chat, never printed, never written by the assistant.
 
 Subcommands:
+    warmapply bootstrap                 create the venv + install deps + init (cross-platform, no shell)
+    warmapply env                       print the venv's python path for THIS OS (copy-pasteable)
     warmapply init                      create ~/.warmapply/{config,data,output}/ + copy templates
     warmapply set-secret <KEY>          getpass (hidden) → write KEY=value into ~/.warmapply/.env
     warmapply detect-telegram-chat-id   getUpdates → write TELEGRAM_CHAT_ID into .env
     warmapply doctor                    full health checklist (superset of orchestrate --preflight)
     warmapply parse-resume <path.docx>  copy resume into data/ + print extracted vs still-needed fields
+
+Cross-platform note: this CLI runs the same on Windows, macOS, and Linux — every
+path is built with os.path and the home dir resolves via os.path.expanduser("~")
+(=%USERPROFILE% on Windows). `bootstrap` exists so first-run setup needs no Bash:
+it drives `python -m venv` + pip via subprocess in pure Python.
 
 Path model (see paths.py §4): CODE lives in the plugin dir ($CLAUDE_PLUGIN_ROOT),
 USER DATA lives in the home dir. Every write here targets `home_target()` — the real
@@ -124,6 +131,88 @@ def _read_env_values(env_path: str) -> Dict[str, str]:
             k, _, v = line.partition("=")
             values[k.strip()] = v.strip().strip("'\"")
     return values
+
+
+# ---------------------------------------------------------------------------
+# venv location — identical logic on every OS, only the leaf dir differs
+# ---------------------------------------------------------------------------
+
+def venv_dir(home: Optional[str] = None) -> str:
+    return os.path.join(home or home_target(), ".venv")
+
+
+def venv_python(home: Optional[str] = None) -> str:
+    """Path to the venv's python interpreter for the CURRENT OS.
+
+    Windows puts it at .venv\\Scripts\\python.exe; POSIX at .venv/bin/python.
+    """
+    vdir = venv_dir(home)
+    if os.name == "nt":
+        return os.path.join(vdir, "Scripts", "python.exe")
+    return os.path.join(vdir, "bin", "python")
+
+
+# ---------------------------------------------------------------------------
+# env — print the venv python path (so the wizard can hand over one command)
+# ---------------------------------------------------------------------------
+
+def cmd_env(args: argparse.Namespace) -> int:
+    vpy = venv_python()
+    exists = os.path.isfile(vpy)
+    print(vpy if exists else f"{vpy}  (not created yet — run: warmapply bootstrap)")
+    return 0 if exists else 1
+
+
+# ---------------------------------------------------------------------------
+# bootstrap — venv + deps + init, in pure Python (no Bash / PowerShell needed)
+# ---------------------------------------------------------------------------
+
+def cmd_bootstrap(args: argparse.Namespace) -> int:
+    """Create the venv, install requirements into it, and run init.
+
+    Runs the same on Windows, macOS, and Linux — it shells out only to Python
+    itself (venv + pip) via subprocess, so no OS-specific shell syntax is needed.
+    """
+    import subprocess
+
+    hp = home_paths()
+    os.makedirs(hp["home"], exist_ok=True)
+    vdir = venv_dir(hp["home"])
+    vpy = venv_python(hp["home"])
+
+    # 1) venv (idempotent — python -m venv is a no-op refresh if it already exists)
+    if os.path.isfile(vpy):
+        print(f"  •  venv exists : {vdir}")
+    else:
+        print(f"  ⏳ creating venv: {vdir}")
+        rc = subprocess.call([sys.executable, "-m", "venv", vdir])
+        if rc != 0 or not os.path.isfile(vpy):
+            print("❌ failed to create the virtual environment. Is Python 3.8+ installed "
+                  "and on PATH? (Windows: install from python.org and tick "
+                  "'Add python.exe to PATH'.)")
+            return 1
+
+    # 2) deps — install requirements.txt into the venv (not the system interpreter)
+    req = os.path.join(paths.CODE_ROOT, "requirements.txt")
+    if not os.path.isfile(req):
+        print(f"⚠️  requirements.txt not found at {req} — skipping dependency install.")
+    else:
+        print(f"  ⏳ installing deps from {req}")
+        rc = subprocess.call([vpy, "-m", "pip", "install", "-q",
+                              "--disable-pip-version-check", "-r", req])
+        if rc != 0:
+            print("❌ dependency install failed. Re-run manually:\n"
+                  f'   "{vpy}" -m pip install -r "{req}"')
+            return 1
+
+    # 3) init the data dir + templates
+    print("  ⏳ initializing data dir")
+    cmd_init(args)
+
+    print("-" * 60)
+    print("✅ bootstrap complete. From here, run the CLI with the VENV python:")
+    print(f'   "{vpy}" "{os.path.join(paths.CODE_ROOT, "scripts", "warmapply_cli.py")}" doctor')
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -331,11 +420,17 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                    ("blank (fine to leave): " + ", ".join(empty_optional))
                    if empty_optional else "all set"))
 
-    # 5) LibreOffice / soffice (advisory — needed only for DOCX→PDF at tailoring)
-    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    # 5) LibreOffice / soffice (advisory — needed only for DOCX→PDF at tailoring).
+    #    Use the cross-platform finder so a Windows install off PATH is still detected.
+    try:
+        import docx_to_pdf
+        soffice = docx_to_pdf.find_soffice()
+    except Exception:
+        soffice = shutil.which("soffice") or shutil.which("libreoffice")
     checks.append(("ok" if soffice else "warn", "LibreOffice (soffice)",
                    soffice if soffice else
                    "not found — install for PDF export: "
+                   "winget install TheDocumentFoundation.LibreOffice  /  "
                    "brew install --cask libreoffice  /  apt-get install libreoffice"))
 
     # 6) Notion MCP (advisory — reached via Claude Code connector, not .env)
@@ -509,6 +604,10 @@ def build_parser() -> argparse.ArgumentParser:
         description="WarmApply setup & health CLI. Secrets enter ONLY via `set-secret` (getpass).")
     sub = parser.add_subparsers(dest="command")
 
+    sub.add_parser("bootstrap",
+                   help="create the venv + install deps + init (cross-platform, no shell)")
+    sub.add_parser("env", help="print the venv's python path for this OS")
+
     sub.add_parser("init", help="create ~/.warmapply/{config,data,output}/ + copy templates")
 
     p_secret = sub.add_parser("set-secret", help="getpass (hidden) → write KEY into .env")
@@ -530,6 +629,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     dispatch: Dict[str, Callable[[argparse.Namespace], int]] = {
+        "bootstrap": cmd_bootstrap,
+        "env": cmd_env,
         "init": cmd_init,
         "set-secret": cmd_set_secret,
         "detect-telegram-chat-id": cmd_detect,

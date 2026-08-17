@@ -190,7 +190,8 @@ def main() -> int:
             print(f"  ⚠️  conversion failed: {e}")
     else:
         print("  ⚠️  LibreOffice (soffice) not installed — skipping PDF.")
-        print("     Install: macOS `brew install --cask libreoffice` / "
+        print("     Install: Windows `winget install TheDocumentFoundation.LibreOffice` / "
+              "macOS `brew install --cask libreoffice` / "
               "Ubuntu `sudo apt-get install libreoffice`")
         print("     (.docx is still produced; PDF is generated when soffice exists.)")
 

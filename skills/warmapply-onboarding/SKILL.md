@@ -18,26 +18,58 @@ Guide the user through setup, one step at a time. Confirm each step succeeded be
 2. **Non-secret config IS collected conversationally.** Ask for roles, locations, screening answers,
    etc. in chat and write them directly to `~/.warmapply/config/*.yaml`. Always keep `dry_run: true`.
 
+## Works on Windows, macOS, and Linux
+
+WarmApply runs natively on all three — **no WSL / Ubuntu install is required on Windows.** The one thing
+that differs between OSes is shell syntax and the venv layout, so **first detect the OS** and use the
+matching column throughout. On Windows, prefer **PowerShell** (the default Claude Code shell there).
+
+| | Windows (PowerShell) | macOS / Linux (bash/zsh) |
+|---|---|---|
+| Home dir | `$env:USERPROFILE\.warmapply` | `$HOME/.warmapply` |
+| Venv python | `~\.warmapply\.venv\Scripts\python.exe` | `~/.warmapply/.venv/bin/python` |
+| Plugin dir var | `$env:CLAUDE_PLUGIN_ROOT` | `$CLAUDE_PLUGIN_ROOT` |
+| System python | `py -3` or `python` | `python3` |
+
+You usually don't need to hand-build the venv path — **`warmapply env` prints the correct one for the
+user's OS**. And **`warmapply bootstrap` does the whole environment setup in one cross-platform step**, so
+you rarely touch shell-specific venv commands at all.
+
 ## Conventions used below
 
-- **Python env:** `${WARMAPPLY_HOME:-$HOME/.warmapply}/.venv/bin/python` — created in Step 1. Until it
-  exists, use `python3`.
-- **CLI:** `<python> ${CLAUDE_PLUGIN_ROOT}/scripts/warmapply_cli.py <subcommand>`. `${CLAUDE_PLUGIN_ROOT}`
-  is the plugin's install dir; run `echo "$CLAUDE_PLUGIN_ROOT"` to get its absolute path when you need to
-  hand the user a copy-pasteable command.
+- **Python env:** the venv python created in Step 1 — get its exact path with `warmapply env`. Until the
+  venv exists, use `python3` (macOS/Linux) or `py -3` / `python` (Windows).
+- **CLI:** `<python> "<CLAUDE_PLUGIN_ROOT>/scripts/warmapply_cli.py" <subcommand>`. Resolve the plugin dir
+  first — `echo "$CLAUDE_PLUGIN_ROOT"` (bash) or `echo $env:CLAUDE_PLUGIN_ROOT` (PowerShell) — and quote
+  the path so a Windows `C:\Program Files\...` with spaces still works.
 - User data lives in `~/.warmapply/` (override: `WARMAPPLY_HOME`); the plugin code is read-only.
 
 ---
 
 ## Step 1 — Environment bootstrap
-1. Create the venv (once): `python3 -m venv "${WARMAPPLY_HOME:-$HOME/.warmapply}/.venv"`.
-2. Install deps: `"${WARMAPPLY_HOME:-$HOME/.warmapply}/.venv/bin/python" -m pip install -r ${CLAUDE_PLUGIN_ROOT}/requirements.txt`.
-3. Initialize the data dir: run `warmapply init` (creates `~/.warmapply/{config,data,output}/` and copies
-   the config templates + a blank `.env`). Idempotent.
-4. Check **LibreOffice** (needed for DOCX→PDF): `command -v soffice`. If missing, tell the user the exact
-   command for their OS and let them run it — **do not install system software silently**:
-   - macOS: `brew install --cask libreoffice`
-   - Ubuntu/Debian: `sudo apt-get install libreoffice`
+**One cross-platform command does it all** — venv, dependency install, and data-dir init:
+
+```
+<system-python> "<CLAUDE_PLUGIN_ROOT>/scripts/warmapply_cli.py" bootstrap
+```
+
+`bootstrap` creates `~/.warmapply/.venv`, installs `requirements.txt` into it, and runs `init` (creating
+`~/.warmapply/{config,data,output}/` + the config templates + a blank `.env`). It is idempotent and runs
+identically on Windows, macOS, and Linux — no shell-specific venv syntax. If `py -3`/`python`/`python3`
+isn't found on Windows, tell the user to install Python from **python.org** and tick *"Add python.exe to
+PATH"* during install, then re-run.
+
+After it finishes, capture the venv python for later steps with `warmapply env`.
+
+> Prefer `bootstrap`. Only fall back to manual venv creation
+> (`python -m venv <home>\.venv` on Windows, `python3 -m venv <home>/.venv` on POSIX) if `bootstrap` fails.
+
+**LibreOffice** (needed for DOCX→PDF): check with `warmapply doctor` (it now detects Windows installs off
+PATH too). If missing, give the user the command for **their OS** and let them run it — **do not install
+system software silently**:
+- Windows: `winget install TheDocumentFoundation.LibreOffice`
+- macOS: `brew install --cask libreoffice`
+- Ubuntu/Debian: `sudo apt-get install libreoffice`
 
 ## Step 2 — Resume
 Ask for the path to their master resume `.docx`. Run `warmapply parse-resume <path>`. Show the extracted

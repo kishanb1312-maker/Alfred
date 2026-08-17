@@ -2,8 +2,9 @@
 
 Wraps `soffice --headless --convert-to pdf`. Produces a REAL text PDF (ATS-safe),
 never an image. LibreOffice is a SYSTEM dependency (not pip) — see requirements.txt:
-    macOS:  brew install --cask libreoffice
-    Ubuntu: sudo apt-get install libreoffice
+    Windows: winget install TheDocumentFoundation.LibreOffice
+    macOS:   brew install --cask libreoffice
+    Ubuntu:  sudo apt-get install libreoffice
 
 Public API:
     - find_soffice() -> str | None      # path to the soffice binary, or None
@@ -28,10 +29,29 @@ class LibreOfficeNotFound(RuntimeError):
     """Raised when no soffice/libreoffice binary can be located."""
 
 
-# Common binary names + macOS app bundle location.
-_CANDIDATES = (
-    "soffice",
-    "libreoffice",
+# Binary names searched on PATH (Windows resolves soffice.exe via shutil.which too).
+_PATH_NAMES = ("soffice", "libreoffice")
+
+
+def _windows_candidates() -> tuple:
+    """Absolute soffice.exe locations for a standard Windows LibreOffice install.
+
+    Built from the ProgramFiles env vars so it works whatever drive Windows is on;
+    falls back to the conventional C:\\ paths when those vars aren't set.
+    """
+    roots = [
+        os.environ.get("ProgramFiles", r"C:\Program Files"),
+        os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+        os.environ.get("LOCALAPPDATA", ""),  # per-user (winget/MSIX) installs
+    ]
+    return tuple(
+        os.path.join(root, "LibreOffice", "program", "soffice.exe")
+        for root in roots if root
+    )
+
+
+# Absolute fallbacks for macOS/Linux app-bundle and package locations.
+_NIX_CANDIDATES = (
     "/Applications/LibreOffice.app/Contents/MacOS/soffice",
     "/usr/bin/soffice",
     "/usr/local/bin/soffice",
@@ -40,15 +60,24 @@ _CANDIDATES = (
 
 
 def find_soffice() -> Optional[str]:
-    """Locate the LibreOffice binary, or return None if it isn't installed."""
-    for cand in _CANDIDATES:
-        if os.path.isabs(cand):
-            if os.path.exists(cand) and os.access(cand, os.X_OK):
-                return cand
-        else:
-            found = shutil.which(cand)
-            if found:
-                return found
+    """Locate the LibreOffice binary, or return None if it isn't installed.
+
+    Cross-platform: checks PATH first (covers most macOS/Linux installs and any
+    Windows box where LibreOffice\\program is on PATH), then the well-known
+    absolute install locations for the current OS.
+    """
+    # 1) On PATH — shutil.which finds soffice.exe on Windows and soffice elsewhere.
+    for name in _PATH_NAMES:
+        found = shutil.which(name)
+        if found:
+            return found
+
+    # 2) Well-known absolute locations (Windows installs rarely add themselves to PATH).
+    candidates = _windows_candidates() if os.name == "nt" else _NIX_CANDIDATES
+    for cand in candidates:
+        # os.access(..., X_OK) is unreliable on Windows; existence is enough there.
+        if os.path.exists(cand) and (os.name == "nt" or os.access(cand, os.X_OK)):
+            return cand
     return None
 
 
@@ -71,8 +100,9 @@ def convert(docx_path: str, out_dir: Optional[str] = None,
     if soffice is None:
         raise LibreOfficeNotFound(
             "LibreOffice (soffice) not found. Install it:\n"
-            "  macOS:  brew install --cask libreoffice\n"
-            "  Ubuntu: sudo apt-get install libreoffice"
+            "  Windows: winget install TheDocumentFoundation.LibreOffice\n"
+            "  macOS:   brew install --cask libreoffice\n"
+            "  Ubuntu:  sudo apt-get install libreoffice"
         )
 
     out_dir = out_dir or os.path.dirname(os.path.abspath(docx_path))

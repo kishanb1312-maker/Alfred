@@ -36,6 +36,13 @@ WarmApply installs as a **Claude Code plugin** — no cloning, no manual `cp`, n
 /warmapply-run        # run the pipeline (keep dry_run: true for the first pass)
 ```
 
+> **Runs natively on Windows, macOS, and Linux — no WSL or Ubuntu needed on Windows.**
+> All you need first is **Claude Code** and **Python 3.8+** (on Windows, install from
+> [python.org](https://www.python.org/downloads/) and tick *"Add python.exe to PATH"*). The setup wizard
+> does the rest with one cross-platform command (`warmapply bootstrap`) — it builds the virtualenv,
+> installs dependencies, and creates your data folder the same way on every OS. LibreOffice (optional, for
+> PDF export) installs via `winget install TheDocumentFoundation.LibreOffice` on Windows.
+
 `/warmapply-setup` walks you through everything: it creates a venv and installs deps, initializes
 `~/.warmapply/`, ingests your **master resume** (ATS-simple `.docx`), and collects your search +
 screening answers **in chat**. Your data lives in `~/.warmapply/` (override with `WARMAPPLY_HOME`);
