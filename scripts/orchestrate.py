@@ -1,4 +1,4 @@
-"""WarmApply · orchestrate — deterministic glue for the top-level runbook.
+"""Alfred · orchestrate — deterministic glue for the top-level runbook.
 
 This is NOT a subagent and it invokes NO subagents and NO network. It is the small
 set of pure helpers the main Claude Code session leans on while executing RUNBOOK.md:
@@ -14,7 +14,7 @@ CLI:
     python scripts/orchestrate.py --preflight        # checks; nonzero exit if blocked
     python scripts/orchestrate.py --summary [stats.json]
 
-Dependency: PyYAML (already in requirements.txt, used across WarmApply) to read the
+Dependency: PyYAML (already in requirements.txt, used across Alfred) to read the
 YAML config. No network.
 """
 
@@ -31,7 +31,7 @@ import yaml
 import paths  # single source of truth for all filesystem paths (§4)
 
 # Resolved at import time via paths.py (whose DATA_HOME/CODE_ROOT are computed once
-# when the module is imported), so both the plugin layout (~/.warmapply) and the
+# when the module is imported), so both the plugin layout (~/.alfred) and the
 # legacy clone-and-run layout (repo root) work with no change to the logic below.
 SEARCH_CONFIG = paths.search_config()
 PROFILE_CONFIG = paths.profile_config()
@@ -100,7 +100,7 @@ def preflight(search_path: str = SEARCH_CONFIG,
 
 
 def _print_preflight(report: Dict[str, Any]) -> None:
-    print("WarmApply · preflight")
+    print("Alfred · preflight")
     print("-" * 60)
     c = report["checks"]
 
@@ -125,7 +125,7 @@ def _print_preflight(report: Dict[str, Any]) -> None:
         for issue in report["issues"]:
             print(f"  - {issue}")
     else:
-        print("RESULT: OK — ready to run WarmApply.")
+        print("RESULT: OK — ready to run Alfred.")
         if report["dry_run"]:
             print("  (dry_run is ON — a full pass will prepare everything but send/submit nothing.)")
 
@@ -207,7 +207,7 @@ def run_summary(stats: Dict[str, Any]) -> str:
 
     lines = [
         "=" * 60,
-        f"WarmApply · run summary   [mode: {mode}]",
+        f"Alfred · run summary   [mode: {mode}]",
         "=" * 60,
         f"  Found (fresh, de-duped) : {g('found')}",
         f"  Researched              : {g('researched')}",

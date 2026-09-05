@@ -1,6 +1,6 @@
-"""WarmApply · source adapter — LinkedIn Feed Hunter (BROWSER source; pure normalizer).
+"""Alfred · source adapter — LinkedIn Feed Hunter (BROWSER source; pure normalizer).
 
-WarmApply's signature feature. LinkedIn "we're hiring" posts don't go through job
+Alfred's signature feature. LinkedIn "we're hiring" posts don't go through job
 portals — the poster wants a DM, a comment, or an email. So the job-finder subagent
 scans the LinkedIn feed (in the user's logged-in Chrome), reads each hiring post, and
 passes it to `normalize()` here, which produces a **lead**: the canonical job shape
@@ -122,7 +122,7 @@ def decide_outreach_method(text: str, contact_email: Optional[str],
 
 
 def normalize(raw_post: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize one scraped LinkedIn hiring post into a WarmApply lead.
+    """Normalize one scraped LinkedIn hiring post into a Alfred lead.
 
     `raw_post` is whatever the subagent scraped, e.g.:
         {id/url, title/role, company, location, text/description,

@@ -1,4 +1,4 @@
-"""WarmApply · Job Finder DRY-RUN (no network, no browser, fake data).
+"""Alfred · Job Finder DRY-RUN (no network, no browser, fake data).
 
 Demonstrates the de-dupe pipeline end-to-end:
   1. read config/search.example.yaml,
@@ -34,7 +34,7 @@ CONFIG_PATH = paths.search_example()
 # ---------------------------------------------------------------------------
 
 def load_config(path: str) -> dict:
-    """Read a WarmApply YAML config via yaml.safe_load()."""
+    """Read a Alfred YAML config via yaml.safe_load()."""
     with open(path, "r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh)
     return data or {}
@@ -109,7 +109,7 @@ def sample_jobs() -> list:
 
 def main() -> int:
     print("=" * 72)
-    print("WarmApply · Job Finder — DRY RUN (fake data, no network, no browser)")
+    print("Alfred · Job Finder — DRY RUN (fake data, no network, no browser)")
     print("=" * 72)
 
     cfg = load_config(CONFIG_PATH)

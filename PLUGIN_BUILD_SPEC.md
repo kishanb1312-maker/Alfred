@@ -1,7 +1,7 @@
-# WarmApply — Plugin Build Spec (Claude Code plugin + marketplace)
+# Alfred — Plugin Build Spec (Claude Code plugin + marketplace)
 
 > **Audience:** a fresh ("cold") Claude Code builder session opened in this repo.
-> **Goal of this task:** convert WarmApply from a *clone-and-configure* repo into a
+> **Goal of this task:** convert Alfred from a *clone-and-configure* repo into a
 > **Claude Code plugin** that anyone installs from GitHub with `/plugin`, then sets up
 > **interactively** — no manual `.env` editing, no manual `cp` of config files.
 >
@@ -16,11 +16,11 @@
 | Decision | Value |
 |---|---|
 | Distribution | Claude Code **plugin** served from a **marketplace** in this same GitHub repo |
-| User data dir | `~/.warmapply/` (override with env `WARMAPPLY_HOME`) |
+| User data dir | `~/.alfred/` (override with env `ALFRED_HOME`) |
 | Code location | the installed plugin dir (reference via `${CLAUDE_PLUGIN_ROOT}`) — read-only, updated on plugin update |
-| Secret handling | Secrets are **never** typed into chat and **never** written by Claude. A `warmapply set-secret` CLI (getpass, no echo) writes them to `~/.warmapply/.env`. Non-secret config *is* collected in chat. |
-| Backward compat | Keep the old repo-relative "clone & run" path working. Path resolution falls back to repo root when `~/.warmapply` doesn't exist. |
-| Marketplace repo | Same `WarmApply` repo (add `.claude-plugin/marketplace.json` at root) |
+| Secret handling | Secrets are **never** typed into chat and **never** written by Claude. A `alfred set-secret` CLI (getpass, no echo) writes them to `~/.alfred/.env`. Non-secret config *is* collected in chat. |
+| Backward compat | Keep the old repo-relative "clone & run" path working. Path resolution falls back to repo root when `~/.alfred` doesn't exist. |
+| Marketplace repo | Same `Alfred` repo (add `.claude-plugin/marketplace.json` at root) |
 
 ---
 
@@ -41,7 +41,7 @@
 ## 2. Target file tree
 
 ```
-WarmApply/                          # this repo == the marketplace AND the plugin
+Alfred/                          # this repo == the marketplace AND the plugin
 ├── .claude-plugin/
 │   ├── marketplace.json            # NEW — marketplace manifest
 │   └── plugin.json                 # NEW — plugin manifest
@@ -53,20 +53,20 @@ WarmApply/                          # this repo == the marketplace AND the plugi
 │   ├── approval-gate.md
 │   └── application-agent.md
 ├── commands/                       # NEW — slash commands (triggers)
-│   ├── warmapply-setup.md          # onboarding wizard
-│   ├── warmapply-status.md         # doctor + summary
-│   ├── warmapply-run.md            # MAIN trigger — whole pipeline
-│   ├── warmapply-find.md           # per-agent: job-finder
-│   ├── warmapply-research.md       # per-agent: company-research
-│   ├── warmapply-tailor.md         # per-agent: resume-cover-letter
-│   ├── warmapply-track.md          # per-agent: tracker
-│   ├── warmapply-approve.md        # per-agent: approval-gate
-│   └── warmapply-apply.md          # per-agent: application-agent
+│   ├── alfred-setup.md          # onboarding wizard
+│   ├── alfred-status.md         # doctor + summary
+│   ├── alfred-run.md            # MAIN trigger — whole pipeline
+│   ├── alfred-find.md           # per-agent: job-finder
+│   ├── alfred-research.md       # per-agent: company-research
+│   ├── alfred-tailor.md         # per-agent: resume-cover-letter
+│   ├── alfred-track.md          # per-agent: tracker
+│   ├── alfred-approve.md        # per-agent: approval-gate
+│   └── alfred-apply.md          # per-agent: application-agent
 ├── skills/
-│   └── warmapply-onboarding/       # NEW — the interactive setup wizard skill
+│   └── alfred-onboarding/       # NEW — the interactive setup wizard skill
 │       └── SKILL.md
 ├── scripts/                        # unchanged code, but path resolution refactored (§4)
-│   ├── warmapply_cli.py            # NEW — `warmapply` CLI entrypoint (setup helpers, set-secret)
+│   ├── alfred_cli.py            # NEW — `alfred` CLI entrypoint (setup helpers, set-secret)
 │   ├── paths.py                    # NEW — single source of truth for all paths (§4)
 │   ├── orchestrate.py              # EDIT — use paths.py instead of _REPO_ROOT
 │   └── ... (all existing helpers + sources/ unchanged in logic)
@@ -90,21 +90,21 @@ WarmApply/                          # this repo == the marketplace AND the plugi
 **`.claude-plugin/plugin.json`** (illustrative — verify field names):
 ```json
 {
-  "name": "warmapply",
+  "name": "alfred",
   "version": "1.0.0",
   "description": "Warm, human-in-the-loop job-application assistant: finds IT jobs, researches companies, tailors your resume truthfully, and applies via portal or direct recruiter email after you approve each one on Telegram.",
-  "author": { "name": "WarmApply" }
+  "author": { "name": "Alfred" }
 }
 ```
 
 **`.claude-plugin/marketplace.json`** (illustrative):
 ```json
 {
-  "name": "warmapply",
-  "owner": { "name": "WarmApply" },
+  "name": "alfred",
+  "owner": { "name": "Alfred" },
   "plugins": [
     {
-      "name": "warmapply",
+      "name": "alfred",
       "source": "./",
       "description": "Warm, human-in-the-loop job-application assistant."
     }
@@ -114,10 +114,10 @@ WarmApply/                          # this repo == the marketplace AND the plugi
 
 Install UX after this ships:
 ```
-/plugin marketplace add <owner>/WarmApply
-/plugin install warmapply@warmapply
-/warmapply-setup      # first-run wizard
-/warmapply-run        # run the pipeline
+/plugin marketplace add <owner>/Alfred
+/plugin install alfred@alfred
+/alfred-setup      # first-run wizard
+/alfred-run        # run the pipeline
 ```
 
 ---
@@ -129,7 +129,7 @@ lives in a managed plugin dir and user data lives in the home dir. Introduce one
 **every** script through it.
 
 `scripts/paths.py` responsibilities:
-- `DATA_HOME` = `os.environ.get("WARMAPPLY_HOME")` → else `~/.warmapply` **if it exists** → else fall back
+- `DATA_HOME` = `os.environ.get("ALFRED_HOME")` → else `~/.alfred` **if it exists** → else fall back
   to the repo root (backward compat with clone-and-run).
 - Expose: `search_config()`, `profile_config()`, `env_file()`, `resume_glob()`, `pause_flag()`,
   `output_dir()`, `applied_history_path()`, `approved_queue_path()`, and any other data path currently
@@ -140,53 +140,53 @@ lives in a managed plugin dir and user data lives in the home dir. Introduce one
 Then edit `orchestrate.py` and **every** script/source that references `config/`, `data/`, `output/`,
 `.env` to import from `paths.py`. Grep for `_REPO_ROOT`, `config/`, `data/`, `output`, `.env` and fix each.
 
-**Acceptance:** with `WARMAPPLY_HOME=~/.warmapply` set and populated, `python scripts/orchestrate.py
---preflight` passes reading from `~/.warmapply`; with it unset in a bare clone, the old behavior still works.
+**Acceptance:** with `ALFRED_HOME=~/.alfred` set and populated, `python scripts/orchestrate.py
+--preflight` passes reading from `~/.alfred`; with it unset in a bare clone, the old behavior still works.
 
 ---
 
-## 5. The `warmapply` CLI (`scripts/warmapply_cli.py`)
+## 5. The `alfred` CLI (`scripts/alfred_cli.py`)
 
 A single host-agnostic entrypoint (also the seed of future non-Claude adapters). Subcommands:
 
-- `warmapply init` — create `~/.warmapply/{config,data,output}/`, copy `config/*.example.yaml` →
-  `~/.warmapply/config/*.yaml`, copy `.env.example` → `~/.warmapply/.env` (values blank). Idempotent.
-- `warmapply set-secret <KEY>` — prompt with **getpass (no echo)**, write/replace `KEY=value` in
-  `~/.warmapply/.env`. This is how Telegram/Gmail/API secrets get in **without Claude ever seeing them**.
-- `warmapply detect-telegram-chat-id` — after `TELEGRAM_BOT_TOKEN` is set and the user has messaged the
+- `alfred init` — create `~/.alfred/{config,data,output}/`, copy `config/*.example.yaml` →
+  `~/.alfred/config/*.yaml`, copy `.env.example` → `~/.alfred/.env` (values blank). Idempotent.
+- `alfred set-secret <KEY>` — prompt with **getpass (no echo)**, write/replace `KEY=value` in
+  `~/.alfred/.env`. This is how Telegram/Gmail/API secrets get in **without Claude ever seeing them**.
+- `alfred detect-telegram-chat-id` — after `TELEGRAM_BOT_TOKEN` is set and the user has messaged the
   bot, call `getUpdates`, extract `chat.id`, and write `TELEGRAM_CHAT_ID` to `.env`. Prints instructions
   if no message found yet.
-- `warmapply doctor` — check: Python deps importable, LibreOffice (`soffice`) present, `.env` keys filled,
+- `alfred doctor` — check: Python deps importable, LibreOffice (`soffice`) present, `.env` keys filled,
   Notion MCP reachable (best-effort), configs valid. Prints a checklist. (Superset of `orchestrate --preflight`.)
-- `warmapply parse-resume <path.docx>` — copy the resume into `~/.warmapply/data/`, extract skills/titles
+- `alfred parse-resume <path.docx>` — copy the resume into `~/.alfred/data/`, extract skills/titles
   it can read, and print a JSON of "extracted" vs "still-needed" fields to drive the wizard's questions.
 
 The CLI must run from the plugin dir via `${CLAUDE_PLUGIN_ROOT}` and be callable from a venv.
 
 ---
 
-## 6. The setup wizard (`skills/warmapply-onboarding/SKILL.md` + `commands/warmapply-setup.md`)
+## 6. The setup wizard (`skills/alfred-onboarding/SKILL.md` + `commands/alfred-setup.md`)
 
-`/warmapply-setup` triggers a guided, conversational flow. Sequence:
+`/alfred-setup` triggers a guided, conversational flow. Sequence:
 
-1. **Environment bootstrap** — create a venv, `pip install -r requirements.txt`, run `warmapply init`.
+1. **Environment bootstrap** — create a venv, `pip install -r requirements.txt`, run `alfred init`.
    Check LibreOffice; if missing, tell the user the exact `brew install --cask libreoffice` /
    `apt-get install libreoffice` command (do not attempt system installs silently).
-2. **Resume** — ask for the `.docx` path, run `warmapply parse-resume`, show what was extracted.
+2. **Resume** — ask for the `.docx` path, run `alfred parse-resume`, show what was extracted.
 3. **Search config (chat → search.yaml)** — ask roles, locations, seniority, blacklist companies,
-   daily cap, match threshold (default 70), keep `dry_run: true`. Write to `~/.warmapply/config/search.yaml`.
+   daily cap, match threshold (default 70), keep `dry_run: true`. Write to `~/.alfred/config/search.yaml`.
 4. **Screening answers (chat → profile.yaml)** — the SPEC §10.13 list that a resume can't give:
    work authorization/visa, notice period/availability, salary expectation, relocate/remote preference,
-   phone, LinkedIn/portfolio URLs. Write to `~/.warmapply/config/profile.yaml`.
+   phone, LinkedIn/portfolio URLs. Write to `~/.alfred/config/profile.yaml`.
 5. **Secrets (NEVER in chat)** — for each of `TELEGRAM_BOT_TOKEN`, `HUNTER_API_KEY` **or** `APOLLO_API_KEY`,
    `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`: show the user how to obtain it (§8 of this file), then instruct
-   them to run `warmapply set-secret <KEY>` **in their own terminal**. Claude must not ask them to paste
+   them to run `alfred set-secret <KEY>` **in their own terminal**. Claude must not ask them to paste
    secret values into the chat.
 6. **Telegram chat id** — after the token is set, tell them to message their bot once, then run
-   `warmapply detect-telegram-chat-id`.
+   `alfred detect-telegram-chat-id`.
 7. **Notion + browser (MCP)** — instruct the user to connect the **Notion** connector and use their
    logged-in **Chrome (Claude-in-Chrome)**; these are authorized in Claude Code, not via `.env`.
-8. **Verify** — run `warmapply doctor`; loop until green. Remind them `dry_run` stays ON for the first pass.
+8. **Verify** — run `alfred doctor`; loop until green. Remind them `dry_run` stays ON for the first pass.
 
 The wizard writes non-secret files directly; secrets are always user-run CLI calls.
 
@@ -200,11 +200,11 @@ NOT exist today — there is no `commands/` dir, and subagents are currently onl
 orchestrator. Create all of them.
 
 **Lifecycle commands**
-- `commands/warmapply-setup.md` — thin wrapper that loads the onboarding skill (§6).
-- `commands/warmapply-status.md` — runs `warmapply doctor` + `orchestrate.py --summary` and reports.
+- `commands/alfred-setup.md` — thin wrapper that loads the onboarding skill (§6).
+- `commands/alfred-status.md` — runs `alfred doctor` + `orchestrate.py --summary` and reports.
 
 **Main trigger (whole pipeline)**
-- `commands/warmapply-run.md` — the operator command. Its body = the existing `RUNBOOK.md` sequence,
+- `commands/alfred-run.md` — the operator command. Its body = the existing `RUNBOOK.md` sequence,
   with a preflight/doctor gate first. No logic change; it invokes the same agents in order:
   reconcile → find → research → tailor → track → approve → apply → report.
 
@@ -214,16 +214,16 @@ them by hand or re-run just the stage that failed:
 
 | Command | Invokes subagent | Purpose |
 |---|---|---|
-| `commands/warmapply-find.md` | `job-finder` | just find + de-dupe fresh jobs |
-| `commands/warmapply-research.md` | `company-research` | research + email waterfall + match score on found jobs |
-| `commands/warmapply-tailor.md` | `resume-cover-letter` | tailor resume/cover letter for surviving jobs |
-| `commands/warmapply-track.md` | `tracker` | write/update Notion rows |
-| `commands/warmapply-approve.md` | `approval-gate` | send Telegram cards + reconcile taps |
-| `commands/warmapply-apply.md` | `application-agent` | process the approved queue (respects dry_run/pause/caps) |
+| `commands/alfred-find.md` | `job-finder` | just find + de-dupe fresh jobs |
+| `commands/alfred-research.md` | `company-research` | research + email waterfall + match score on found jobs |
+| `commands/alfred-tailor.md` | `resume-cover-letter` | tailor resume/cover letter for surviving jobs |
+| `commands/alfred-track.md` | `tracker` | write/update Notion rows |
+| `commands/alfred-approve.md` | `approval-gate` | send Telegram cards + reconcile taps |
+| `commands/alfred-apply.md` | `application-agent` | process the approved queue (respects dry_run/pause/caps) |
 
 Rules for the per-agent commands:
 - Each still honors `dry_run`, `/pause`, and daily caps — running a stage manually must NOT bypass the
-  guardrails (esp. `warmapply-apply`).
+  guardrails (esp. `alfred-apply`).
 - Each reads/writes the same intermediate state files the orchestrator uses, so manual and full runs are
   interchangeable.
 - Keep them thin: the command just invokes the subagent; all logic stays in the subagent `.md` files.
@@ -235,11 +235,11 @@ Rules for the per-agent commands:
 This is the answer to "how do users connect Telegram / Google / Notion" once there's no repo `.env`.
 There are **two channels**:
 
-**Channel A — secrets in `~/.warmapply/.env`** (set via `warmapply set-secret`, never in chat):
+**Channel A — secrets in `~/.alfred/.env`** (set via `alfred set-secret`, never in chat):
 
 | Service | What the user does | Keys |
 |---|---|---|
-| **Telegram** | Create a bot in `@BotFather` (~2 min) → copy token. Message the bot once, then `warmapply detect-telegram-chat-id`. **Not MCP** — the app calls the Bot API over HTTP with this token. | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` |
+| **Telegram** | Create a bot in `@BotFather` (~2 min) → copy token. Message the bot once, then `alfred detect-telegram-chat-id`. **Not MCP** — the app calls the Bot API over HTTP with this token. | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` |
 | **Google / Gmail** | Use a **dedicated** job-hunt Gmail. Enable 2-Step Verification → create an **App Password** for "Mail". **Not OAuth, not MCP** — the app sends via SMTP with this app password. | `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` |
 | **Email finder** | Sign up for Hunter.io (free tier) or Apollo → copy API key. | `HUNTER_API_KEY` *or* `APOLLO_API_KEY` |
 
@@ -260,7 +260,7 @@ Confirmed by grepping the scripts — only **4 vars are actually consumed by cod
 
 **Required (4):**
 - `TELEGRAM_BOT_TOKEN` — from `@BotFather`
-- `TELEGRAM_CHAT_ID` — auto-detected via `warmapply detect-telegram-chat-id`
+- `TELEGRAM_CHAT_ID` — auto-detected via `alfred detect-telegram-chat-id`
 - `GMAIL_ADDRESS` — dedicated job-hunt Gmail
 - `GMAIL_APP_PASSWORD` — Gmail App Password (requires 2FA)
 
@@ -274,12 +274,12 @@ runs + messaging the bot once.**
 
 ### 8b. Each user MUST create their own Telegram bot (do NOT share one)
 
-The wizard must instruct every user to create their **own** bot. A shared bot breaks WarmApply because:
+The wizard must instruct every user to create their **own** bot. A shared bot breaks Alfred because:
 1. The bot token is a master secret — anyone holding it can read all the bot's messages and impersonate it.
 2. The approval-gate polls `getUpdates` with a saved offset and **consumes** updates. Telegram has one
    update queue per bot, so if multiple users share a bot, one user's poll swallows another user's
    Approve/Skip tap → approvals get delivered to the wrong machine and the human-in-the-loop safety model
-   breaks. WarmApply is server-less (local polling), so one bot = one poller.
+   breaks. Alfred is server-less (local polling), so one bot = one poller.
 
 Creating a bot is ~2 min in `@BotFather`; the wizard auto-detects the chat ID afterward.
 
@@ -287,25 +287,25 @@ Creating a bot is ~2 min in `@BotFather`; the wizard auto-detects the chat ID af
 
 ## 9. Docs to update
 
-- `README.md` — replace the "clone + cp + pip" setup section with the `/plugin` install + `/warmapply-setup`
+- `README.md` — replace the "clone + cp + pip" setup section with the `/plugin` install + `/alfred-setup`
   flow, and add the §8 connection tables.
-- `RUNBOOK.md` — note that paths now resolve to `~/.warmapply`; the sequence itself is unchanged.
+- `RUNBOOK.md` — note that paths now resolve to `~/.alfred`; the sequence itself is unchanged.
 - Keep `SPEC.md` as the design record; add a one-line pointer to this plugin spec.
 
 ---
 
 ## 10. Build order (do in this sequence, verify each before moving on)
 
-1. `scripts/paths.py` + refactor `orchestrate.py` to use it; prove preflight works from both `~/.warmapply`
+1. `scripts/paths.py` + refactor `orchestrate.py` to use it; prove preflight works from both `~/.alfred`
    and a bare clone. **(Highest-risk change — do first, test hard.)**
 2. Route every other script/source through `paths.py` (grep-driven).
-3. `scripts/warmapply_cli.py` — `init`, `set-secret`, `detect-telegram-chat-id`, `doctor`, `parse-resume`.
+3. `scripts/alfred_cli.py` — `init`, `set-secret`, `detect-telegram-chat-id`, `doctor`, `parse-resume`.
 4. Move `.claude/agents/` → `agents/`; add `.claude-plugin/plugin.json` + `marketplace.json`.
-5. `commands/` (setup, run, status) + `skills/warmapply-onboarding/SKILL.md`.
+5. `commands/` (setup, run, status) + `skills/alfred-onboarding/SKILL.md`.
 6. Optional `.mcp.json` declaring Notion/browser.
 7. Update `README.md` + `RUNBOOK.md`.
-8. **End-to-end dry-run acceptance:** from a simulated fresh install, run `/warmapply-setup` to green
-   `doctor`, then `/warmapply-run` with `dry_run: true` and confirm the full pipeline prepares (but sends
+8. **End-to-end dry-run acceptance:** from a simulated fresh install, run `/alfred-setup` to green
+   `doctor`, then `/alfred-run` with `dry_run: true` and confirm the full pipeline prepares (but sends
    nothing) exactly as it does today.
 
 ## 11. Non-negotiables (unchanged from SPEC.md)

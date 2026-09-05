@@ -1,7 +1,7 @@
-"""WarmApply · source adapter — We Work Remotely (RSS 2.0).
+"""Alfred · source adapter — We Work Remotely (RSS 2.0).
 
 Read-only: fetch the public WWR RSS feed and normalize each <item> into the
-canonical WarmApply job shape. WWR is a remote-only board, so results are relevant
+canonical Alfred job shape. WWR is a remote-only board, so results are relevant
 regardless of the user's city locations.
 
 Feed quirks handled:
@@ -35,7 +35,7 @@ FEED_URL = "https://weworkremotely.com/remote-jobs.rss"
 
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 WarmApply/1.0 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Alfred/1.0 "
     "(+job-search; contact via app)"
 )
 
@@ -92,7 +92,7 @@ def split_company_title(raw_title: str):
 
 
 def normalize(item: Dict[str, Any]) -> Dict[str, Any]:
-    """Map one parsed RSS item dict to the canonical WarmApply job shape."""
+    """Map one parsed RSS item dict to the canonical Alfred job shape."""
     company, title = split_company_title(item.get("title", ""))
     categories = item.get("categories") or []
     if not isinstance(categories, list):

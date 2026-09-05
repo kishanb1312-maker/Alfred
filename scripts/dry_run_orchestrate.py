@@ -1,4 +1,4 @@
-"""WarmApply · Orchestrator DRY-RUN (OFFLINE — no network, no subagent calls).
+"""Alfred · Orchestrator DRY-RUN (OFFLINE — no network, no subagent calls).
 
 Exercises the deterministic glue in scripts/orchestrate.py:
   1. preflight() against the EXAMPLE configs (+ a temp sample resume) → OK/dry_run,
@@ -66,10 +66,10 @@ TAILORING = {
 
 def main() -> int:
     print("=" * 66)
-    print("WarmApply · Orchestrator — DRY RUN (OFFLINE; no subagent/network calls)")
+    print("Alfred · Orchestrator — DRY RUN (OFFLINE; no subagent/network calls)")
     print("=" * 66)
 
-    workdir = tempfile.mkdtemp(prefix="warmapply_orch_")
+    workdir = tempfile.mkdtemp(prefix="alfred_orch_")
     resume_path = os.path.join(workdir, "master_resume.docx")
     with open(resume_path, "wb") as fh:               # temp stand-in resume
         fh.write(b"PK\x03\x04 fake docx for preflight glob\n")

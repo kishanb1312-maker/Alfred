@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""WarmApply · warmapply — the host-agnostic setup/maintenance CLI (§5).
+"""Alfred · alfred — the host-agnostic setup/maintenance CLI (§5).
 
 A single entrypoint for the plugin's first-run setup and health checks. It is the
-ONLY place secrets ever enter WarmApply, and they enter via getpass (no echo) —
+ONLY place secrets ever enter Alfred, and they enter via getpass (no echo) —
 never typed into chat, never printed, never written by the assistant.
 
 Subcommands:
-    warmapply bootstrap                 create the venv + install deps + init (cross-platform, no shell)
-    warmapply env                       print the venv's python path for THIS OS (copy-pasteable)
-    warmapply init                      create ~/.warmapply/{config,data,output}/ + copy templates
-    warmapply set-secret <KEY>          getpass (hidden) → write KEY=value into ~/.warmapply/.env
-    warmapply detect-telegram-chat-id   getUpdates → write TELEGRAM_CHAT_ID into .env
-    warmapply doctor                    full health checklist (superset of orchestrate --preflight)
-    warmapply parse-resume <path.docx>  copy resume into data/ + print extracted vs still-needed fields
+    alfred bootstrap                 create the venv + install deps + init (cross-platform, no shell)
+    alfred env                       print the venv's python path for THIS OS (copy-pasteable)
+    alfred init                      create ~/.alfred/{config,data,output}/ + copy templates
+    alfred set-secret <KEY>          getpass (hidden) → write KEY=value into ~/.alfred/.env
+    alfred detect-telegram-chat-id   getUpdates → write TELEGRAM_CHAT_ID into .env
+    alfred doctor                    full health checklist (superset of orchestrate --preflight)
+    alfred parse-resume <path.docx>  copy resume into data/ + print extracted vs still-needed fields
 
 Cross-platform note: this CLI runs the same on Windows, macOS, and Linux — every
 path is built with os.path and the home dir resolves via os.path.expanduser("~")
@@ -21,7 +21,7 @@ it drives `python -m venv` + pip via subprocess in pure Python.
 
 Path model (see paths.py §4): CODE lives in the plugin dir ($CLAUDE_PLUGIN_ROOT),
 USER DATA lives in the home dir. Every write here targets `home_target()` — the real
-$WARMAPPLY_HOME or ~/.warmapply — never the legacy repo-root fallback, because these
+$ALFRED_HOME or ~/.alfred — never the legacy repo-root fallback, because these
 commands create/manage that home dir (on first `init` it does not exist yet).
 """
 
@@ -56,10 +56,19 @@ KNOWN_KEYS = REQUIRED_SECRETS + OPTIONAL_SECRETS
 # ---------------------------------------------------------------------------
 
 def home_target() -> str:
-    override = os.environ.get("WARMAPPLY_HOME", "").strip()
-    if override:
-        return os.path.abspath(os.path.expanduser(override))
-    return os.path.join(os.path.expanduser("~"), ".warmapply")
+    """Resolved the same way as paths._resolve_data_home() (minus the repo-root
+    fallback) so reads and writes always agree — including for a pre-rename install
+    that still lives in $WARMAPPLY_HOME / ~/.warmapply."""
+    for var in ("ALFRED_HOME", "WARMAPPLY_HOME"):
+        override = os.environ.get(var, "").strip()
+        if override:
+            return os.path.abspath(os.path.expanduser(override))
+
+    fresh = os.path.join(os.path.expanduser("~"), ".alfred")
+    legacy = os.path.join(os.path.expanduser("~"), ".warmapply")
+    if not os.path.isdir(fresh) and os.path.isdir(legacy):
+        return legacy
+    return fresh
 
 
 def home_paths(home: Optional[str] = None) -> Dict[str, str]:
@@ -159,7 +168,7 @@ def venv_python(home: Optional[str] = None) -> str:
 def cmd_env(args: argparse.Namespace) -> int:
     vpy = venv_python()
     exists = os.path.isfile(vpy)
-    print(vpy if exists else f"{vpy}  (not created yet — run: warmapply bootstrap)")
+    print(vpy if exists else f"{vpy}  (not created yet — run: alfred bootstrap)")
     return 0 if exists else 1
 
 
@@ -211,7 +220,7 @@ def cmd_bootstrap(args: argparse.Namespace) -> int:
 
     print("-" * 60)
     print("✅ bootstrap complete. From here, run the CLI with the VENV python:")
-    print(f'   "{vpy}" "{os.path.join(paths.CODE_ROOT, "scripts", "warmapply_cli.py")}" doctor')
+    print(f'   "{vpy}" "{os.path.join(paths.CODE_ROOT, "scripts", "alfred_cli.py")}" doctor')
     return 0
 
 
@@ -246,7 +255,7 @@ def cmd_init(args: argparse.Namespace) -> int:
             os.chmod(dst, 0o600)  # .env holds secrets → lock it down from creation
         created.append(dst)
 
-    print(f"WarmApply · init  →  {hp['home']}")
+    print(f"Alfred · init  →  {hp['home']}")
     print("-" * 60)
     for c in created:
         print(f"  ✅ created : {c}")
@@ -254,10 +263,10 @@ def cmd_init(args: argparse.Namespace) -> int:
         print(f"  •  exists  : {s}")
     print("-" * 60)
     print("Next:")
-    print("  1. warmapply set-secret TELEGRAM_BOT_TOKEN   (then GMAIL_ADDRESS, GMAIL_APP_PASSWORD)")
-    print("  2. message your bot once, then: warmapply detect-telegram-chat-id")
-    print("  3. edit config/search.yaml + config/profile.yaml (or use /warmapply-setup)")
-    print("  4. warmapply doctor")
+    print("  1. alfred set-secret TELEGRAM_BOT_TOKEN   (then GMAIL_ADDRESS, GMAIL_APP_PASSWORD)")
+    print("  2. message your bot once, then: alfred detect-telegram-chat-id")
+    print("  3. edit config/search.yaml + config/profile.yaml (or use /alfred-setup)")
+    print("  4. alfred doctor")
     return 0
 
 
@@ -273,12 +282,12 @@ def cmd_set_secret(args: argparse.Namespace) -> int:
         print(f"❌ invalid key '{key}' — expected UPPER_SNAKE_CASE (e.g. TELEGRAM_BOT_TOKEN)")
         return 2
     if key not in KNOWN_KEYS:
-        print(f"⚠️  '{key}' is not a recognized WarmApply key — setting it anyway.")
+        print(f"⚠️  '{key}' is not a recognized Alfred key — setting it anyway.")
 
     hp = home_paths()
     if not os.path.isdir(hp["home"]):
         print(f"⚠️  {hp['home']} does not exist yet — creating it "
-              "(run `warmapply init` for the full skeleton).")
+              "(run `alfred init` for the full skeleton).")
         os.makedirs(hp["home"], exist_ok=True)
 
     try:
@@ -342,7 +351,7 @@ def cmd_detect(args: argparse.Namespace, _fetch: Optional[Callable[[str], Any]] 
     paths.load_env(hp["env"])
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
-        print("❌ TELEGRAM_BOT_TOKEN not set. First run:  warmapply set-secret TELEGRAM_BOT_TOKEN")
+        print("❌ TELEGRAM_BOT_TOKEN not set. First run:  alfred set-secret TELEGRAM_BOT_TOKEN")
         return 1
 
     fetch = _fetch or _get_updates
@@ -355,7 +364,7 @@ def cmd_detect(args: argparse.Namespace, _fetch: Optional[Callable[[str], Any]] 
     cid = extract_chat_id(data)
     if not cid:
         print("No message found yet. In Telegram, send ANY message to your bot, then re-run:")
-        print("    warmapply detect-telegram-chat-id")
+        print("    alfred detect-telegram-chat-id")
         return 1
 
     write_secret(hp["env"], "TELEGRAM_CHAT_ID", cid)  # chat id is an identifier, not a secret
@@ -380,7 +389,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     hp = home_paths()
     if not os.path.isdir(hp["home"]):
-        print(f"❌ WarmApply is not initialized — run `warmapply init` "
+        print(f"❌ Alfred is not initialized — run `alfred init` "
               f"(expected {hp['home']}).")
         return 1
     paths.load_env(hp["env"])
@@ -411,7 +420,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     env_vals = _read_env_values(hp["env"])
     empty_required = [k for k in REQUIRED_SECRETS if not env_vals.get(k, "").strip()]
     checks.append(("fail" if empty_required else "ok", "required secrets",
-                   ("blank: " + ", ".join(empty_required) + "  (warmapply set-secret <KEY>)")
+                   ("blank: " + ", ".join(empty_required) + "  (alfred set-secret <KEY>)")
                    if empty_required else "all set (TELEGRAM_*, GMAIL_*)"))
 
     # 4) Optional secrets (advisory)
@@ -441,7 +450,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                        "via Claude Code Notion MCP connector — verify with /mcp in Claude Code"))
 
     # ---- render ----
-    print("WarmApply · doctor")
+    print("Alfred · doctor")
     print("-" * 60)
     for status, label, detail in checks:
         print(f"  {_mark(status)} {label:<18}: {detail}")
@@ -600,15 +609,15 @@ def cmd_parse_resume(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="warmapply",
-        description="WarmApply setup & health CLI. Secrets enter ONLY via `set-secret` (getpass).")
+        prog="alfred",
+        description="Alfred setup & health CLI. Secrets enter ONLY via `set-secret` (getpass).")
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("bootstrap",
                    help="create the venv + install deps + init (cross-platform, no shell)")
     sub.add_parser("env", help="print the venv's python path for this OS")
 
-    sub.add_parser("init", help="create ~/.warmapply/{config,data,output}/ + copy templates")
+    sub.add_parser("init", help="create ~/.alfred/{config,data,output}/ + copy templates")
 
     p_secret = sub.add_parser("set-secret", help="getpass (hidden) → write KEY into .env")
     p_secret.add_argument("key", help="e.g. TELEGRAM_BOT_TOKEN, GMAIL_ADDRESS, GMAIL_APP_PASSWORD")

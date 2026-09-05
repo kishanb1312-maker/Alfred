@@ -1,4 +1,4 @@
-"""WarmApply · LinkedIn Feed Hunter DRY-RUN (OFFLINE — browser source, no network).
+"""Alfred · LinkedIn Feed Hunter DRY-RUN (OFFLINE — browser source, no network).
 
 Feeds fake scraped hiring posts through the REAL normalize + matches_roles and asserts:
   - lead shape = canonical job shape PLUS outreach_method / recruiter_name /
@@ -86,7 +86,7 @@ class FakePythonSource:
 
 def main() -> int:
     print("=" * 74)
-    print("WarmApply · LinkedIn Feed Hunter — DRY RUN (OFFLINE; no network)")
+    print("Alfred · LinkedIn Feed Hunter — DRY RUN (OFFLINE; no network)")
     print("=" * 74)
 
     leads = lf.normalize_posts(POSTS, ROLES)
@@ -96,7 +96,7 @@ def main() -> int:
 
     # dispatch behavior
     registry = {"linkedin_feed": lf, "fakeapi": FakePythonSource()}
-    tmp_history = os.path.join(tempfile.mkdtemp(prefix="warmapply_lf_"), "history.json")
+    tmp_history = os.path.join(tempfile.mkdtemp(prefix="alfred_lf_"), "history.json")
     fresh, report = source_dispatch.dispatch(["linkedin_feed", "fakeapi"], roles=ROLES,
                                              blacklist=[], registry=registry,
                                              history_path=tmp_history)

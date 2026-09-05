@@ -3,17 +3,17 @@ description: Run ONLY the application-agent stage — process the approved queue
 disable-model-invocation: true
 ---
 
-# /warmapply-apply — application-agent only
+# /alfred-apply — application-agent only
 
 Run just the apply stage against `data/approved_queue.json`. **This is the only stage that acts on the
 world**, so the guardrails are hard gates, not reminders.
 
-1. **Preflight gate — MANDATORY.** Run `${WARMAPPLY_HOME:-$HOME/.warmapply}/.venv/bin/python
+1. **Preflight gate — MANDATORY.** Run `${ALFRED_HOME:-$HOME/.alfred}/.venv/bin/python
    ${CLAUDE_PLUGIN_ROOT}/scripts/orchestrate.py --preflight` (fall back to `python3`).
    - **If it exits non-zero, or /pause (`data/paused.flag`) is set → STOP. Do NOT invoke the agent.**
      Running a stage manually must never bypass a pause.
    - Read the reported **dry_run** state and pass it through unchanged.
-2. **Invoke** the `warmapply:application-agent` subagent to process the approved queue. It must, on its
+2. **Invoke** the `alfred:application-agent` subagent to process the approved queue. It must, on its
    own, still enforce every guardrail below — do not instruct it to skip any of them:
    - **dry_run: true** → prepare/serialize the email or form fill and return, **sending/submitting
      nothing**.

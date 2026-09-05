@@ -1,4 +1,4 @@
-"""WarmApply · applied_history — de-dupe + record store (pure stdlib, no network).
+"""Alfred · applied_history — de-dupe + record store (pure stdlib, no network).
 
 The store lives at ``data/applied_history.json`` and maps a stable ``job_id`` to a
 small record::

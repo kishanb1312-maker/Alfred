@@ -1,6 +1,6 @@
-# WarmApply — Build Spec (v2, Claude-Code-native)
+# Alfred — Build Spec (v2, Claude-Code-native)
 
-> Project & repo name: **WarmApply** (`warmapply`).
+> Project & repo name: **Alfred** (`alfred`).
 
 > Status: **Design locked. Claude-Code-native architecture.** Ready to build agent-by-agent.
 > The only things provided at build/runtime are the user's resume + personal inputs (Section 10).
@@ -151,7 +151,7 @@ Applied / Skipped) · Timestamps · Reply/follow-up tracking.
 ## 9. Repo structure (planned)
 
 ```
-warmapply/
+alfred/
 ├── .claude/
 │   └── agents/                    # REAL Claude Code subagent files
 │       ├── job-finder.md

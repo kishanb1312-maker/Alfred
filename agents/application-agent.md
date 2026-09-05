@@ -1,6 +1,6 @@
 ---
 name: application-agent
-description: Acts on Approved jobs from data/approved_queue.json. For the email channel it sends the tailored resume + cover letter + short message via Gmail SMTP; for the portal channel it fills the form (LinkedIn Easy Apply via the user's Chrome) using config/profile.yaml and hands the final Submit click to the human on ban-prone sites. Respects /pause, dry_run, and daily caps, then marks the job Applied in Notion and applied_history. The only WarmApply agent that acts on the world.
+description: Acts on Approved jobs from data/approved_queue.json. For the email channel it sends the tailored resume + cover letter + short message via Gmail SMTP; for the portal channel it fills the form (LinkedIn Easy Apply via the user's Chrome) using config/profile.yaml and hands the final Submit click to the human on ban-prone sites. Respects /pause, dry_run, and daily caps, then marks the job Applied in Notion and applied_history. The only Alfred agent that acts on the world.
 tools: Read, Write, Bash, notion-update-page
 ---
 

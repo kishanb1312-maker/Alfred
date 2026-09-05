@@ -1,4 +1,4 @@
-"""WarmApply · Greenhouse/Lever DRY-RUN (OFFLINE — asserts zero network).
+"""Alfred · Greenhouse/Lever DRY-RUN (OFFLINE — asserts zero network).
 
 Feeds SAVED sample Greenhouse AND Lever JSON responses through the REAL per-provider
 normalizers + role filter, and asserts:
@@ -89,7 +89,7 @@ CANONICAL_KEYS = {
 
 def main() -> int:
     print("=" * 74)
-    print("WarmApply · Greenhouse/Lever — DRY RUN (OFFLINE; _http_get_json tripwired)")
+    print("Alfred · Greenhouse/Lever — DRY RUN (OFFLINE; _http_get_json tripwired)")
     print("=" * 74)
 
     gh_jobs = gl.normalize_greenhouse(GH_RESPONSE, GH_ENTRY, ROLES)

@@ -1,4 +1,4 @@
-"""WarmApply · We Work Remotely DRY-RUN (OFFLINE — asserts zero network).
+"""Alfred · We Work Remotely DRY-RUN (OFFLINE — asserts zero network).
 
 Feeds a SAVED sample of the WWR RSS feed (fake items, no network) through the REAL
 parser + normalizer + role filter, prints the canonical jobs, and asserts:
@@ -98,7 +98,7 @@ CANONICAL_KEYS = {
 
 def main() -> int:
     print("=" * 74)
-    print("WarmApply · We Work Remotely — DRY RUN (OFFLINE; requests tripwired)")
+    print("Alfred · We Work Remotely — DRY RUN (OFFLINE; requests tripwired)")
     print("=" * 74 + "\n")
 
     jobs = wwr.normalize_feed(SAMPLE_RSS, ROLES)

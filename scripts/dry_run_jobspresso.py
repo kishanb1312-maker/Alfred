@@ -1,4 +1,4 @@
-"""WarmApply · Jobspresso DRY-RUN (OFFLINE — asserts zero network).
+"""Alfred · Jobspresso DRY-RUN (OFFLINE — asserts zero network).
 
 Feeds a SAVED sample that mirrors the REAL Jobspresso feed structure seen live
 (WP Job Manager RSS with a custom job_listing namespace: dedicated <company>,
@@ -115,7 +115,7 @@ CANONICAL_KEYS = {
 
 def main() -> int:
     print("=" * 74)
-    print("WarmApply · Jobspresso — DRY RUN (OFFLINE; requests tripwired)")
+    print("Alfred · Jobspresso — DRY RUN (OFFLINE; requests tripwired)")
     print("=" * 74 + "\n")
 
     jobs = jp.normalize_feed(SAMPLE_RSS, ROLES)

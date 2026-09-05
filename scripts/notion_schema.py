@@ -1,4 +1,4 @@
-"""WarmApply · notion_schema — single source of truth for the Notion tracker.
+"""Alfred · notion_schema — single source of truth for the Notion tracker.
 
 Pure and offline (stdlib only). Two responsibilities:
   - database_schema() -> Notion PROPERTY DEFINITIONS (for create-database).
@@ -77,7 +77,7 @@ def _multi_select_def(options: List[str]) -> Dict[str, Any]:
 
 
 def database_schema() -> Dict[str, Dict[str, Any]]:
-    """Return the Notion property definitions for the WarmApply database.
+    """Return the Notion property definitions for the Alfred database.
 
     Shape matches Notion's `properties` object for create-database. Exactly one
     `title` property (Company), as Notion requires.

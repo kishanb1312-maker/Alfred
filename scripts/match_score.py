@@ -1,4 +1,4 @@
-"""WarmApply · match_score — deterministic job/candidate match baseline.
+"""Alfred · match_score — deterministic job/candidate match baseline.
 
 Returns a 0–100 SIGNAL from skill/keyword overlap between a job description and
 the user's profile. This is intentionally simple, pure, and offline: the

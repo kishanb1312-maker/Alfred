@@ -1,4 +1,4 @@
-"""WarmApply · source_dispatch — run ALL implemented sources, every run.
+"""Alfred · source_dispatch — run ALL implemented sources, every run.
 
 The Job Finder's deterministic core. Given a `search_order`, it queries EVERY
 implemented source in that order (no early stop, NO find-cap), concatenates the

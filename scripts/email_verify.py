@@ -1,4 +1,4 @@
-"""WarmApply · email_verify — syntax + MX verification + pattern generation.
+"""Alfred · email_verify — syntax + MX verification + pattern generation.
 
 Used by the company-research agent's email waterfall. Every candidate address
 MUST pass verification before it is accepted (guardrail: no unverified sends).
@@ -161,7 +161,7 @@ def generate_patterns(first: str, last: str, domain: str) -> List[str]:
 def best_pattern(first: str, last: str, domain: str) -> Optional[str]:
     """The SINGLE most-likely guessed address (`first.last@domain`), or None.
 
-    Used as the last-resort fallback in the email waterfall: WarmApply guesses ONE
+    Used as the last-resort fallback in the email waterfall: Alfred guesses ONE
     address only (never blasts multiple guesses). The caller MUST still MX-verify the
     domain before accepting it (see `best_guess`). Returns None if inputs are too thin.
     """

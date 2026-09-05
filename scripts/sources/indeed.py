@@ -1,4 +1,4 @@
-"""WarmApply · source adapter — Indeed (BROWSER source; pure normalizer).
+"""Alfred · source adapter — Indeed (BROWSER source; pure normalizer).
 
 Indeed is a browser source (like Wellfound): the job-finder subagent drives the
 user's logged-in Chrome (Claude-in-Chrome MCP), reads the rendered job cards, and

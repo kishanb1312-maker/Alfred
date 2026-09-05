@@ -1,4 +1,4 @@
-"""WarmApply · Company Research DRY-RUN (offline, mocked network).
+"""Alfred · Company Research DRY-RUN (offline, mocked network).
 
 Demonstrates the enrichment pipeline WITHOUT any live calls:
   1. read the match threshold from config/search.example.yaml,
@@ -185,7 +185,7 @@ def mock_waterfall(job: dict) -> dict:
 
 
 def apply_confidence_gate(confidence: int) -> str:
-    """WarmApply gates: ≥85 send · 60-84 flag · <60 not-found."""
+    """Alfred gates: ≥85 send · 60-84 flag · <60 not-found."""
     if confidence >= 85:
         return "accept"
     if confidence >= 60:
@@ -269,7 +269,7 @@ def enrich(job: dict, profile: dict, threshold: int) -> dict:
 
 def main() -> int:
     print("=" * 72)
-    print("WarmApply · Company Research — DRY RUN (offline, mocked network)")
+    print("Alfred · Company Research — DRY RUN (offline, mocked network)")
     print("=" * 72)
 
     cfg = yaml.safe_load(open(SEARCH_CFG, encoding="utf-8")) or {}

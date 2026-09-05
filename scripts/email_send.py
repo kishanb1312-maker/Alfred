@@ -1,4 +1,4 @@
-"""WarmApply · email_send — direct-recruiter email via Gmail SMTP (stdlib only).
+"""Alfred · email_send — direct-recruiter email via Gmail SMTP (stdlib only).
 
 Used by the application-agent's email channel. Builds a MIME message with the
 tailored resume + cover letter attached and sends it through Gmail SMTP.

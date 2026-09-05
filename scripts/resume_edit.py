@@ -1,6 +1,6 @@
-"""WarmApply · resume_edit — format-safe DOCX paragraph editing (python-docx only).
+"""Alfred · resume_edit — format-safe DOCX paragraph editing (python-docx only).
 
-This is the mechanical half of WarmApply's truthfulness core. The agent (the brain)
+This is the mechanical half of Alfred's truthfulness core. The agent (the brain)
 decides WHICH paragraphs are the summary / which bullets to re-emphasize and supplies
 the new truthful text; this module performs the edit WITHOUT touching anything else.
 

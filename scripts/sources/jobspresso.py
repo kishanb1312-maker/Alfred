@@ -1,7 +1,7 @@
-"""WarmApply · source adapter — Jobspresso (WP Job Manager RSS).
+"""Alfred · source adapter — Jobspresso (WP Job Manager RSS).
 
 Read-only: fetch the Jobspresso job feed and normalize each <item> into the
-canonical WarmApply job shape.
+canonical Alfred job shape.
 
 Live-feed structure (confirmed by inspection of https://jobspresso.co/?feed=job_feed):
   - Standard RSS 2.0 with a custom `job_listing` namespace (https://jobspresso.co/).
@@ -38,7 +38,7 @@ FEED_URL = "https://jobspresso.co/?feed=job_feed"
 
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 WarmApply/1.0 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Alfred/1.0 "
     "(+job-search; contact via app)"
 )
 
@@ -83,7 +83,7 @@ def _slug(value: Optional[str]) -> str:
 
 
 def normalize(item: Dict[str, Any]) -> Dict[str, Any]:
-    """Map one parsed Jobspresso item dict to the canonical WarmApply job shape."""
+    """Map one parsed Jobspresso item dict to the canonical Alfred job shape."""
     # Stable id: prefer the numeric WP post-id, else the link slug.
     stable = (item.get("post-id") or "").strip() or _slug(item.get("link"))
 

@@ -1,4 +1,4 @@
-"""WarmApply · source adapter — Greenhouse / Lever company boards (Python source).
+"""Alfred · source adapter — Greenhouse / Lever company boards (Python source).
 
 Read-only: watch SPECIFIC companies' public job boards (no key needed). Driven by a
 `company_boards` list in config/search.yaml — empty by default; the user adds the
@@ -37,7 +37,7 @@ _HTTP_TIMEOUT = 15
 
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 WarmApply/1.0 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Alfred/1.0 "
     "(+job-search; contact via app)"
 )
 

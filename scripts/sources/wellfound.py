@@ -1,13 +1,13 @@
-"""WarmApply · source adapter — Wellfound (BROWSER source; pure normalizer).
+"""Alfred · source adapter — Wellfound (BROWSER source; pure normalizer).
 
 Wellfound (formerly AngelList Talent) has NO API or RSS — it's a login-gated JS
-app. So it is WarmApply's first **browser source**: the job-finder subagent drives
+app. So it is Alfred's first **browser source**: the job-finder subagent drives
 the user's logged-in Chrome (Claude-in-Chrome MCP), reads the rendered job cards,
 and passes each card's fields to `normalize()` here.
 
 This module is therefore PURE — no network, no requests, no browsing. It only:
   - declares the source as browser-driven (SOURCE, BROWSER=True),
-  - normalizes one scraped card dict → canonical WarmApply job shape,
+  - normalizes one scraped card dict → canonical Alfred job shape,
   - offers the same role matcher the Python adapters use.
 
 The reusable browser-source contract (Indeed, LinkedIn will reuse it):

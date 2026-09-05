@@ -1,4 +1,4 @@
-"""WarmApply · Wellfound DRY-RUN (OFFLINE — browser source; no network at all).
+"""Alfred · Wellfound DRY-RUN (OFFLINE — browser source; no network at all).
 
 Wellfound is a BROWSER source: the job-finder subagent scrapes cards from Chrome
 and this module only normalizes them. So this dry-run:
@@ -80,7 +80,7 @@ class FakePythonSource:
 
 def main() -> int:
     print("=" * 74)
-    print("WarmApply · Wellfound — DRY RUN (OFFLINE; browser source, no network)")
+    print("Alfred · Wellfound — DRY RUN (OFFLINE; browser source, no network)")
     print("=" * 74)
 
     # ---- A. normalize + role filter ---------------------------------------
@@ -92,7 +92,7 @@ def main() -> int:
     # ---- C. dispatch marks wellfound as browser ---------------------------
     registry = {"wellfound": wf, "fakeapi": FakePythonSource()}
     order = ["wellfound", "fakeapi"]
-    tmp_history = os.path.join(tempfile.mkdtemp(prefix="warmapply_wf_"), "history.json")
+    tmp_history = os.path.join(tempfile.mkdtemp(prefix="alfred_wf_"), "history.json")
     fresh, report = source_dispatch.dispatch(order, roles=ROLES, blacklist=[],
                                              registry=registry, history_path=tmp_history)
     print("\nC) dispatch report over [wellfound, fakeapi]:")

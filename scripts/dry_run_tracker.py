@@ -1,4 +1,4 @@
-"""WarmApply · Tracker DRY-RUN (offline mapping check — NO Notion/MCP calls).
+"""Alfred · Tracker DRY-RUN (offline mapping check — NO Notion/MCP calls).
 
 Verifies scripts/notion_schema.py without touching Notion or the network:
   1. print database_schema() (the property definitions),
@@ -68,7 +68,7 @@ def _value_type(prop_value: dict) -> str:
 
 def main() -> int:
     print("=" * 74)
-    print("WarmApply · Tracker — DRY RUN (offline; NO Notion/MCP/network calls)")
+    print("Alfred · Tracker — DRY RUN (offline; NO Notion/MCP/network calls)")
     print("=" * 74)
 
     schema = ns.database_schema()

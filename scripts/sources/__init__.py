@@ -1,7 +1,7 @@
-"""WarmApply source adapters.
+"""Alfred source adapters.
 
 Each adapter module exposes `fetch(roles, locations=None, timeout=...) -> list`
-returning canonical WarmApply job dicts (read-only). REGISTRY maps the source
+returning canonical Alfred job dicts (read-only). REGISTRY maps the source
 name used in `search_order` to its adapter module. Sources listed in config but
 absent from REGISTRY are treated as "not implemented yet" and skipped.
 """

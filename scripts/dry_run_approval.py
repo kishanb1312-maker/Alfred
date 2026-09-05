@@ -1,4 +1,4 @@
-"""WarmApply · Approval Gate DRY-RUN (OFFLINE — asserts NO real HTTP calls).
+"""Alfred · Approval Gate DRY-RUN (OFFLINE — asserts NO real HTTP calls).
 
 Two halves, both offline:
   A. Build the EXACT outgoing card payload for a sample job — text, inline-keyboard
@@ -63,11 +63,11 @@ FAKE_JOB = {
 
 def main() -> int:
     print("=" * 74)
-    print("WarmApply · Approval Gate — DRY RUN (OFFLINE; _api spy raises on call)")
+    print("Alfred · Approval Gate — DRY RUN (OFFLINE; _api spy raises on call)")
     print("=" * 74)
 
     # ---- A. Outgoing card payload -----------------------------------------
-    workdir = tempfile.mkdtemp(prefix="warmapply_tg_")
+    workdir = tempfile.mkdtemp(prefix="alfred_tg_")
     resume_pdf = os.path.join(workdir, "Resume_GlobexSystems.pdf")
     with open(resume_pdf, "wb") as fh:              # present → will attach
         fh.write(b"%PDF-1.4 fake resume for dry-run\n")

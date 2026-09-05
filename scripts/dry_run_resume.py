@@ -1,4 +1,4 @@
-"""WarmApply · Resume + Cover Letter DRY-RUN (truthfulness core demo).
+"""Alfred · Resume + Cover Letter DRY-RUN (truthfulness core demo).
 
 Proves the format-safe tailoring end-to-end, WITHOUT touching data/ or the network:
   1. build a small ATS-simple SAMPLE resume.docx in a TEMP folder (never data/),
@@ -142,10 +142,10 @@ def email_text(job, profile) -> str:
 
 def main() -> int:
     print("=" * 74)
-    print("WarmApply · Resume + Cover Letter — DRY RUN (truthfulness core)")
+    print("Alfred · Resume + Cover Letter — DRY RUN (truthfulness core)")
     print("=" * 74)
 
-    workdir = tempfile.mkdtemp(prefix="warmapply_resume_")
+    workdir = tempfile.mkdtemp(prefix="alfred_resume_")
     outdir = os.path.join(workdir, "output",
                           f"{FAKE_JOB['company'].replace(' ', '')}_"
                           f"{FAKE_JOB['title'].replace(' ', '')}")

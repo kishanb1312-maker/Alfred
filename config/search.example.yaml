@@ -1,4 +1,4 @@
-# WarmApply · example search config
+# Alfred · example search config
 # Copy to config/search.yaml and edit. The Job Finder falls back to THIS file
 # (with a warning) when config/search.yaml is missing.
 

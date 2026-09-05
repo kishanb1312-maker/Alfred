@@ -1,4 +1,4 @@
-"""WarmApply · telegram_bot — Approval Gate transport (Telegram Bot HTTP API).
+"""Alfred · telegram_bot — Approval Gate transport (Telegram Bot HTTP API).
 
 Sends one review card per job (text + inline Approve/Skip + the tailored PDFs),
 and polls getUpdates to collect the user's taps and /pause. Designed so a tap can

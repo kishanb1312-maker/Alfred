@@ -1,4 +1,4 @@
-"""WarmApply · Application Agent DRY-RUN (OFFLINE — dual-channel + bounce throttle).
+"""Alfred · Application Agent DRY-RUN (OFFLINE — dual-channel + bounce throttle).
 
 Simulates the application agent's DUAL-CHANNEL loop: every approved job gets BOTH a
 portal application AND (if an email was found) a cold email — including single
@@ -166,10 +166,10 @@ def _print_log(log):
 
 def main() -> int:
     print("=" * 74)
-    print("WarmApply · Application Agent — DRY RUN (OFFLINE; dual-channel + throttle)")
+    print("Alfred · Application Agent — DRY RUN (OFFLINE; dual-channel + throttle)")
     print("=" * 74)
 
-    workdir = tempfile.mkdtemp(prefix="warmapply_apply_")
+    workdir = tempfile.mkdtemp(prefix="alfred_apply_")
     counts_path = os.path.join(workdir, "daily_counts.json")
     email_flag = os.path.join(workdir, "email_paused.flag")
     caps = {"applies_per_day": 5, "emails_per_day": 5}

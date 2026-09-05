@@ -1,14 +1,14 @@
-"""WarmApply · paths — the single source of truth for every filesystem path.
+"""Alfred · paths — the single source of truth for every filesystem path.
 
 Why this module exists
 ----------------------
-WarmApply ships two ways:
+Alfred ships two ways:
 
   1. **Clone-and-run** (legacy): the whole repo is checked out and both the code and
      the user's data live under the repo root.
   2. **Claude Code plugin** (new): the *code* lives in a managed, read-only plugin dir
      (exposed as ``$CLAUDE_PLUGIN_ROOT``) and the *user's data* lives in the home dir
-     (``~/.warmapply`` or ``$WARMAPPLY_HOME``).
+     (``~/.alfred`` or ``$ALFRED_HOME``).
 
 Every other script imports from here instead of deriving its own ``_REPO_ROOT`` so both
 layouts work with no per-script conditionals.
@@ -16,7 +16,7 @@ layouts work with no per-script conditionals.
 Two roots
 ---------
 - ``DATA_HOME``  — where the *user's* mutable data lives (configs, resume, output, flags).
-      resolution:  $WARMAPPLY_HOME  →  ~/.warmapply (if it exists)  →  repo root
+      resolution:  $ALFRED_HOME  →  ~/.alfred (if it exists)  →  repo root
 - ``CODE_ROOT``  — where the *bundled, read-only* code + example files live.
       resolution:  $CLAUDE_PLUGIN_ROOT  →  repo root
 
@@ -49,20 +49,27 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def _resolve_data_home() -> str:
     """Where the user's mutable data lives.
 
-    $WARMAPPLY_HOME (explicit override, expanded) → ~/.warmapply if it exists →
+    $ALFRED_HOME (explicit override, expanded) → $WARMAPPLY_HOME (pre-rename name) →
+    ~/.alfred if it exists → ~/.warmapply if it exists (pre-rename dir) →
     else the repo root (backward-compatible clone-and-run).
 
-    NOTE: WARMAPPLY_HOME must be a REAL exported environment variable. It cannot be
+    NOTE: ALFRED_HOME must be a REAL exported environment variable. It cannot be
     set from a line inside .env, because .env itself is located *inside* DATA_HOME —
     it is not loaded until after this resolution runs, so it can't influence it.
-    """
-    override = os.environ.get("WARMAPPLY_HOME", "").strip()
-    if override:
-        return os.path.abspath(os.path.expanduser(override))
 
-    default_home = os.path.join(os.path.expanduser("~"), ".warmapply")
-    if os.path.isdir(default_home):
-        return default_home
+    The two legacy entries exist because the project was renamed WarmApply → Alfred
+    after the first installs shipped. An existing ~/.warmapply keeps working untouched;
+    rename it to ~/.alfred whenever you like.
+    """
+    for var in ("ALFRED_HOME", "WARMAPPLY_HOME"):
+        override = os.environ.get(var, "").strip()
+        if override:
+            return os.path.abspath(os.path.expanduser(override))
+
+    for leaf in (".alfred", ".warmapply"):
+        default_home = os.path.join(os.path.expanduser("~"), leaf)
+        if os.path.isdir(default_home):
+            return default_home
 
     return _REPO_ROOT
 

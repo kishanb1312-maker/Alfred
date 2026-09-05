@@ -1,4 +1,4 @@
-# WarmApply — Plugin Build Progress & Change List
+# Alfred — Plugin Build Progress & Change List
 
 > **Companion to [`PLUGIN_BUILD_SPEC.md`](PLUGIN_BUILD_SPEC.md).** That file has the full design;
 > **this file is the actionable checklist** the builder works through in order, and the architect
@@ -6,7 +6,7 @@
 >
 > **Rules (every step):** keep `dry_run: true` while testing · show the architect the real changed
 > code + a dry-run result before committing · **nothing is committed until the architect approves** ·
-> never touch the user's real `~/.warmapply` or home dir during tests (use isolated fixtures).
+> never touch the user's real `~/.alfred` or home dir during tests (use isolated fixtures).
 
 ---
 
@@ -14,7 +14,7 @@
 `scripts/paths.py` (new) + `scripts/orchestrate.py` (refactored).
 - Two roots: `DATA_HOME` (user data) and `CODE_ROOT` (bundled code), with correct fallbacks.
 - `.env` auto-loads on import; real exported env vars win over the file.
-- Proven: plugin mode reads from `WARMAPPLY_HOME`; bare clone falls back to repo root.
+- Proven: plugin mode reads from `ALFRED_HOME`; bare clone falls back to repo root.
 - *Reviewed by architect against the real code — correct.*
 
 ---
@@ -41,7 +41,7 @@ Replaced all per-script `_REPO_ROOT` derivations and hardcoded paths with `paths
 - [x] Sibling-import trap → **Rule A** (every entry-point ensures `scripts/` on `sys.path`); subdir files
       under `scripts/sources/` add the explicit parent-insert mirroring `source_dispatch.py:26`.
 - [x] Write safety → all writers already had `os.makedirs(exist_ok=True)`; preserved.
-- [x] Doc fix → `orchestrate.py` comment corrected; `WARMAPPLY_HOME`-must-be-exported note added to `paths.py`.
+- [x] Doc fix → `orchestrate.py` comment corrected; `ALFRED_HOME`-must-be-exported note added to `paths.py`.
 
 **Architect verification (real code + runtime, not summary):** `_REPO_ROOT` lives only in `paths.py`;
 full tree byte-compiles; all sibling imports resolve at runtime; every data filename preserved
@@ -50,8 +50,8 @@ email-pause writer & reader share one path source. **Correct.**
 
 ---
 
-## Step 3 — the `warmapply` CLI  (`scripts/warmapply_cli.py`)  ✅ DONE & APPROVED
-- [x] `init` — creates `~/.warmapply/{config,data,output}/`, copies templates, `.env` 0600, idempotent.
+## Step 3 — the `alfred` CLI  (`scripts/alfred_cli.py`)  ✅ DONE & APPROVED
+- [x] `init` — creates `~/.alfred/{config,data,output}/`, copies templates, `.env` 0600, idempotent.
 - [x] `set-secret <KEY>` — getpass (no echo), value never in argv/printed, atomic 0600 upsert.
 - [x] `detect-telegram-chat-id` — `getUpdates` → `TELEGRAM_CHAT_ID`; network isolated behind injectable `_fetch`.
 - [x] `doctor` — deps/configs/resume/secrets/LibreOffice/Notion; required-vs-advisory split; delegates to preflight.
@@ -64,7 +64,7 @@ email-pause writer & reader share one path source. **Correct.**
 - [x] **Temp-file perm race** — `write_secret` now creates the temp `0600` from the start via
       `os.open(..., O_CREAT, 0o600)` (was chmod-after-write). Proven under hostile `umask 000`.
 
-**Acceptance:** `init` → `set-secret` → `doctor` produces a green checklist; real `~/.warmapply` never touched.
+**Acceptance:** `init` → `set-secret` → `doctor` produces a green checklist; real `~/.alfred` never touched.
 
 ---
 
@@ -86,22 +86,22 @@ the two `.claude/agents/` refs in code (`orchestrate.py:11`, `indeed.py:9`) are 
 ---
 
 ## Step 5 — commands (triggers) + onboarding skill  ✅ DONE & APPROVED
-- [x] `commands/warmapply-setup.md` (loads onboarding skill), `warmapply-status.md` (read-only doctor+summary).
-- [x] `commands/warmapply-run.md` — MAIN trigger (full RUNBOOK sequence, preflight-gated).
-- [x] Per-agent triggers: `warmapply-find / -research / -tailor / -track / -approve / -apply.md`.
-- [x] `skills/warmapply-onboarding/SKILL.md` — the interactive wizard (all 8 steps of §6).
+- [x] `commands/alfred-setup.md` (loads onboarding skill), `alfred-status.md` (read-only doctor+summary).
+- [x] `commands/alfred-run.md` — MAIN trigger (full RUNBOOK sequence, preflight-gated).
+- [x] Per-agent triggers: `alfred-find / -research / -tailor / -track / -approve / -apply.md`.
+- [x] `skills/alfred-onboarding/SKILL.md` — the interactive wizard (all 8 steps of §6).
 - [x] All 9 commands: `disable-model-invocation: true` → **Claude can never auto-fire them** (esp. `apply`);
       only recognized frontmatter fields → passes `--strict`. Reversible install showed 10 skills + 6 agents.
 
 **Architect verification (read the real files):**
-- `warmapply-apply.md` — preflight is a **hard STOP** (won't invoke the agent if preflight fails or `/pause`);
+- `alfred-apply.md` — preflight is a **hard STOP** (won't invoke the agent if preflight fails or `/pause`);
   dry_run/`/pause`/`email_paused`/caps/human-final-Submit/prior-Approve all enforced and "never bypass" stated. ✅
 - `SKILL.md` — rule #1 is "secrets NEVER in chat and NEVER written by you" (getpass only); non-secret config
   collected conversationally; own-bot rationale baked in. ✅
-- venv path consistent between wizard (`~/.warmapply/.venv`) and commands (`${WARMAPPLY_HOME:-$HOME/.warmapply}/.venv`). ✅
+- venv path consistent between wizard (`~/.alfred/.venv`) and commands (`${ALFRED_HOME:-$HOME/.alfred}/.venv`). ✅
 
-**Carry to Step 7 (docs polish):** SKILL.md lines 33-34 hardcode `~/.warmapply/.venv` — switch to the
-`${WARMAPPLY_HOME:-$HOME/.warmapply}` variable form for custom-home users. Always-on cost now ~1,080 tok/session (inherent).
+**Carry to Step 7 (docs polish):** SKILL.md lines 33-34 hardcode `~/.alfred/.venv` — switch to the
+`${ALFRED_HOME:-$HOME/.alfred}` variable form for custom-home users. Always-on cost now ~1,080 tok/session (inherent).
 
 ---
 
@@ -116,12 +116,12 @@ password/bearer/authorization) — OAuth stays per-user via `/mcp`. Passes `--st
 ---
 
 ## Step 7 — docs  ✅ DONE & APPROVED
-- [x] `README.md` — Setup now shows `/plugin marketplace add` → `install` → `/warmapply-setup`; Running shows
+- [x] `README.md` — Setup now shows `/plugin marketplace add` → `install` → `/alfred-setup`; Running shows
       the main + 6 per-stage commands; added §8 service-connection tables, §8b own-bot note, updated repo tree.
-- [x] `RUNBOOK.md` — added the paths-resolve-under-`~/.warmapply` note (WARMAPPLY_HOME override + bare-clone
+- [x] `RUNBOOK.md` — added the paths-resolve-under-`~/.alfred` note (ALFRED_HOME override + bare-clone
       fallback); sequence itself unchanged.
 - [x] All 8 stale `.claude/agents/` refs → `agents/` (RUNBOOK ×1, SPEC ×3, README ×2, orchestrate.py docstring ×1, indeed.py comment ×1).
-- [x] `SKILL.md` lines 33-34 → `${WARMAPPLY_HOME:-$HOME/.warmapply}/.venv` (no more hardcoded path).
+- [x] `SKILL.md` lines 33-34 → `${ALFRED_HOME:-$HOME/.alfred}/.venv` (no more hardcoded path).
 
 **Architect verification:** grep confirms no `.claude/agents/` left in code/user-docs; venv now variable-form;
 README setup flow matches the built plugin (install → wizard → secrets-via-CLI → own-bot). No code behavior changed. **Correct.**
@@ -129,17 +129,17 @@ README setup flow matches the built plugin (install → wizard → secrets-via-C
 ---
 
 ## Step 8 — end-to-end acceptance (simulated fresh install)  ✅ DONE & APPROVED
-- [x] Fresh-install onboarding on a throwaway `WARMAPPLY_HOME`: init → set-secret ×4 (fake) → detect-chat-id
+- [x] Fresh-install onboarding on a throwaway `ALFRED_HOME`: init → set-secret ×4 (fake) → detect-chat-id
       → parse-resume → fill configs → `doctor` READY.
-- [x] `/warmapply-run` pipeline (preflight + all 6 stage harnesses) ran green under `dry_run: true`.
+- [x] `/alfred-run` pipeline (preflight + all 6 stage harnesses) ran green under `dry_run: true`.
 - [x] Send chokepoints proven closed (SMTP/IMAP/Telegram patched to explode — never fired).
-- [x] `/warmapply-apply` hard-STOP on `/pause` proven (preflight exit 1 → agent never invoked).
+- [x] `/alfred-apply` hard-STOP on `/pause` proven (preflight exit 1 → agent never invoked).
 
 **Architect independent verification (own runs, not the summary):**
 - paused preflight → exit 1; unpaused → exit 0. ✅
 - `email_send.send(dry_run=True)` returned `DRY_RUN` with `_smtp_send` patched to raise — SMTP never reached;
   `send()` **defaults to dry_run=True**. ✅
-- real `~/.warmapply` does not exist — untouched. ✅
+- real `~/.alfred` does not exist — untouched. ✅
 
 ---
 

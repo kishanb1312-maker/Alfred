@@ -1,4 +1,4 @@
-"""WarmApply · bounce_check — cold-email bounce detection + auto-throttle safety.
+"""Alfred · bounce_check — cold-email bounce detection + auto-throttle safety.
 
 Dual-channel outreach cold-emails every company, including single best-guess
 addresses the user accepted the bounce risk for. To protect their Gmail, after a
@@ -99,7 +99,7 @@ def evaluate_throttle(sent_count: int, bounce_count: int, *,
 def throttle_warning(evaluation: Dict[str, Any]) -> str:
     """Telegram warning text when the throttle trips."""
     return (
-        "⚠️ WarmApply auto-paused the EMAIL channel: " + evaluation["reason"] + ".\n"
+        "⚠️ Alfred auto-paused the EMAIL channel: " + evaluation["reason"] + ".\n"
         "Cold emails are halted to protect your Gmail — portal applications continue.\n"
         "Clear `data/email_paused.flag` (or send /resume) once the address list is cleaned up."
     )

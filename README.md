@@ -1,4 +1,4 @@
-# WarmApply
+# Alfred
 
 A **Claude-Code-native** job-application assistant that leads with **warm, direct-to-recruiter
 outreach** over spray-and-pray. It finds IT jobs, researches the
@@ -27,38 +27,38 @@ See [`SPEC.md`](SPEC.md) for the full design.
 
 ## Setup (each user, on their own machine)
 
-WarmApply installs as a **Claude Code plugin** — no cloning, no manual `cp`, no `.env` editing.
+Alfred installs as a **Claude Code plugin** — no cloning, no manual `cp`, no `.env` editing.
 
 ```
 /plugin marketplace add kishanb1312-maker/WarmApply
-/plugin install warmapply@warmapply
-/warmapply-setup      # first-run wizard (guided, conversational)
-/warmapply-run        # run the pipeline (keep dry_run: true for the first pass)
+/plugin install alfred@alfred
+/alfred-setup      # first-run wizard (guided, conversational)
+/alfred-run        # run the pipeline (keep dry_run: true for the first pass)
 ```
 
 > **Runs natively on Windows, macOS, and Linux — no WSL or Ubuntu needed on Windows.**
 > All you need first is **Claude Code** and **Python 3.8+** (on Windows, install from
 > [python.org](https://www.python.org/downloads/) and tick *"Add python.exe to PATH"*). The setup wizard
-> does the rest with one cross-platform command (`warmapply bootstrap`) — it builds the virtualenv,
+> does the rest with one cross-platform command (`alfred bootstrap`) — it builds the virtualenv,
 > installs dependencies, and creates your data folder the same way on every OS. LibreOffice (optional, for
 > PDF export) installs via `winget install TheDocumentFoundation.LibreOffice` on Windows.
 
-`/warmapply-setup` walks you through everything: it creates a venv and installs deps, initializes
-`~/.warmapply/`, ingests your **master resume** (ATS-simple `.docx`), and collects your search +
-screening answers **in chat**. Your data lives in `~/.warmapply/` (override with `WARMAPPLY_HOME`);
+`/alfred-setup` walks you through everything: it creates a venv and installs deps, initializes
+`~/.alfred/`, ingests your **master resume** (ATS-simple `.docx`), and collects your search +
+screening answers **in chat**. Your data lives in `~/.alfred/` (override with `ALFRED_HOME`);
 the plugin code stays read-only and updates with the plugin.
 
-> **Secrets are never typed into chat.** The wizard has you run `warmapply set-secret <KEY>` in your
+> **Secrets are never typed into chat.** The wizard has you run `alfred set-secret <KEY>` in your
 > **own terminal** (hidden `getpass` prompt) — Claude never sees a token or password. Non-secret
 > config (roles, locations, screening answers) *is* collected conversationally.
 
 ### How each service is connected
 
-**Channel A — secrets in `~/.warmapply/.env`** (set via `warmapply set-secret`, never in chat):
+**Channel A — secrets in `~/.alfred/.env`** (set via `alfred set-secret`, never in chat):
 
 | Service | What you do | Keys |
 |---|---|---|
-| **Telegram** | Create a bot in `@BotFather` (~2 min) → copy the token. Message the bot once, then run `warmapply detect-telegram-chat-id`. **Not MCP** — the app calls the Bot API over HTTP with this token. | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` |
+| **Telegram** | Create a bot in `@BotFather` (~2 min) → copy the token. Message the bot once, then run `alfred detect-telegram-chat-id`. **Not MCP** — the app calls the Bot API over HTTP with this token. | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` |
 | **Google / Gmail** | Use a **dedicated** job-hunt Gmail. Enable 2-Step Verification → create an **App Password** for "Mail". **Not OAuth, not MCP** — the app sends via SMTP with this app password. | `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` |
 | **Email finder** *(optional)* | Sign up for Hunter.io (free tier) or Apollo → copy the API key. | `HUNTER_API_KEY` *or* `APOLLO_API_KEY` |
 
@@ -82,15 +82,15 @@ effectively **3 `set-secret` runs + messaging the bot once**.
 
 ## Running
 
-Run the whole pipeline with **`/warmapply-run`** (or just say **"run WarmApply"**). It follows
+Run the whole pipeline with **`/alfred-run`** (or just say **"run Alfred"**). It follows
 [`RUNBOOK.md`](RUNBOOK.md) — reconcile → find → research → tailor → track → approve → apply → report —
 invoking the six worker subagents in [`agents/`](agents), gated on a preflight check first.
 
-Check readiness anytime with **`/warmapply-status`** (runs `warmapply doctor` + a run summary): it
+Check readiness anytime with **`/alfred-status`** (runs `alfred doctor` + a run summary): it
 confirms your config, resume, and required secrets are in place and reports whether **dry_run** is on and
 whether **/pause** is set. Keep **`dry_run: true`** until you've watched a full pass.
 
-Run a single stage manually with **`/warmapply-find`**, **`-research`**, **`-tailor`**, **`-track`**,
+Run a single stage manually with **`/alfred-find`**, **`-research`**, **`-tailor`**, **`-track`**,
 **`-approve`**, or **`-apply`** — each still honors `dry_run`, `/pause`, and daily caps. Use `/loop` to
 repeat a run while the session stays open.
 
@@ -117,12 +117,29 @@ data contract.
 ```
 .claude-plugin/   plugin.json + marketplace.json (plugin & marketplace manifests)
 agents/           Claude Code subagent definitions (the six workers)
-commands/         slash-command triggers (/warmapply-run, /warmapply-setup, per-stage …)
-skills/           onboarding wizard (warmapply-onboarding)
-scripts/          deterministic Python helpers + the `warmapply` CLI (run via Bash)
-config/           example search + screening config (committed; your real ones live in ~/.warmapply)
+commands/         slash-command triggers (/alfred-run, /alfred-setup, per-stage …)
+skills/           onboarding wizard (alfred-onboarding)
+scripts/          deterministic Python helpers + the `alfred` CLI (run via Bash)
+config/           example search + screening config (committed; your real ones live in ~/.alfred)
 .mcp.json         declares the Notion connector (OAuth per-user; no credentials)
 SPEC.md           full design spec
 
-~/.warmapply/     YOUR data (config, resume, output, .env) — outside the repo, per user
+~/.alfred/     YOUR data (config, resume, output, .env) — outside the repo, per user
 ```
+
+---
+
+## Upgrading from WarmApply
+
+Alfred was previously called **WarmApply**. If you installed before the rename, nothing
+breaks — path resolution still falls back to `$WARMAPPLY_HOME` and `~/.warmapply`, so an
+existing install keeps reading and writing exactly where it always did.
+
+To move onto the new name at your leisure:
+
+```
+mv ~/.warmapply ~/.alfred          # Windows: move %USERPROFILE%\.warmapply %USERPROFILE%\.alfred
+```
+
+If you had exported `WARMAPPLY_HOME`, rename it to `ALFRED_HOME`. The slash commands are now
+`/alfred-run`, `/alfred-setup`, etc., and the CLI is `alfred` instead of `warmapply`.

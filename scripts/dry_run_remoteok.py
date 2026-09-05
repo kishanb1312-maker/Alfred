@@ -1,4 +1,4 @@
-"""WarmApply · RemoteOK + dispatch DRY-RUN (OFFLINE — asserts zero network).
+"""Alfred · RemoteOK + dispatch DRY-RUN (OFFLINE — asserts zero network).
 
 Part A — RemoteOK normalizer:
     Feed a saved sample of the RemoteOK JSON (metadata element + fake jobs) through
@@ -131,7 +131,7 @@ def part_b():
     # Includes "ghost" (not implemented) and "boom" (errors) between the two real ones.
     order = ["alpha", "ghost", "boom", "beta"]
 
-    tmp_history = os.path.join(tempfile.mkdtemp(prefix="warmapply_disp_"),
+    tmp_history = os.path.join(tempfile.mkdtemp(prefix="alfred_disp_"),
                                "history.json")  # empty → nothing pre-seen
     fresh, report = source_dispatch.dispatch(
         order, roles=ROLES, blacklist=[], registry=registry, history_path=tmp_history)
@@ -148,7 +148,7 @@ def part_b():
 
 def main() -> int:
     print("=" * 74)
-    print("WarmApply · RemoteOK + dispatch — DRY RUN (OFFLINE; requests tripwired)")
+    print("Alfred · RemoteOK + dispatch — DRY RUN (OFFLINE; requests tripwired)")
     print("=" * 74 + "\n")
 
     jobs = part_a()

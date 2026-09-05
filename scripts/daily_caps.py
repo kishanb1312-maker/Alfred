@@ -1,4 +1,4 @@
-"""WarmApply · daily_caps — per-day action counters (pure stdlib, no network).
+"""Alfred · daily_caps — per-day action counters (pure stdlib, no network).
 
 The application-agent uses this to never exceed `caps.applies_per_day` /
 `caps.emails_per_day`. Counts are kept per calendar day and per `kind` in

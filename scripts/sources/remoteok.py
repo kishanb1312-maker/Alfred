@@ -1,7 +1,7 @@
-"""WarmApply · source adapter — RemoteOK (https://remoteok.com/api).
+"""Alfred · source adapter — RemoteOK (https://remoteok.com/api).
 
 Read-only: fetch the public RemoteOK JSON feed and normalize each listing into the
-canonical WarmApply job shape. Remote-only board, so `location` is effectively
+canonical Alfred job shape. Remote-only board, so `location` is effectively
 "Remote"; results are filtered by the user's `roles`.
 
 Endpoint returns a JSON ARRAY whose FIRST element is legal/metadata — it is
@@ -30,7 +30,7 @@ API_URL = "https://remoteok.com/api"
 # A real, descriptive User-Agent (RemoteOK rejects the default requests UA).
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 WarmApply/1.0 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Alfred/1.0 "
     "(+job-search; contact via app)"
 )
 
@@ -67,7 +67,7 @@ def _tokens(text: str) -> set:
 
 
 def normalize(raw: Dict[str, Any]) -> Dict[str, Any]:
-    """Map one RemoteOK job object to the canonical WarmApply job shape."""
+    """Map one RemoteOK job object to the canonical Alfred job shape."""
     job_id = raw.get("id")
     tags = raw.get("tags") or []
     if not isinstance(tags, list):

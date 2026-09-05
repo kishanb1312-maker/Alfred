@@ -1,11 +1,11 @@
-# WarmApply — Runbook
+# Alfred — Runbook
 
-This is what the **main Claude Code session** executes when you say **"run WarmApply"** (or run
-`/warmapply-run`). It sequences the six worker subagents in `agents/`. Keep `dry_run: true` in your
+This is what the **main Claude Code session** executes when you say **"run Alfred"** (or run
+`/alfred-run`). It sequences the six worker subagents in `agents/`. Keep `dry_run: true` in your
 search config until you've watched a full pass.
 
 > **Paths:** config, resume, and runtime data (`config/*.yaml`, `data/`, `output/`) now resolve under
-> **`~/.warmapply/`** (override with `WARMAPPLY_HOME`); a bare clone falls back to the repo root. The
+> **`~/.alfred/`** (override with `ALFRED_HOME`); a bare clone falls back to the repo root. The
 > sequence itself is unchanged.
 
 ## Preconditions

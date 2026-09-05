@@ -1,4 +1,4 @@
-"""WarmApply · Indeed DRY-RUN (OFFLINE — browser source; no network at all).
+"""Alfred · Indeed DRY-RUN (OFFLINE — browser source; no network at all).
 
 Indeed is a BROWSER source: the job-finder subagent scrapes cards from Chrome and
 this module only normalizes them. This dry-run:
@@ -74,7 +74,7 @@ class FakePythonSource:
 
 def main() -> int:
     print("=" * 74)
-    print("WarmApply · Indeed — DRY RUN (OFFLINE; browser source, no network)")
+    print("Alfred · Indeed — DRY RUN (OFFLINE; browser source, no network)")
     print("=" * 74)
 
     # ---- A. normalize + role filter ---------------------------------------
@@ -86,7 +86,7 @@ def main() -> int:
     # ---- C. dispatch marks indeed as browser ------------------------------
     registry = {"indeed": idd, "fakeapi": FakePythonSource()}
     order = ["indeed", "fakeapi"]
-    tmp_history = os.path.join(tempfile.mkdtemp(prefix="warmapply_idd_"), "history.json")
+    tmp_history = os.path.join(tempfile.mkdtemp(prefix="alfred_idd_"), "history.json")
     fresh, report = source_dispatch.dispatch(order, roles=ROLES, blacklist=[],
                                              registry=registry, history_path=tmp_history)
     print("\nC) dispatch report over [indeed, fakeapi]:")

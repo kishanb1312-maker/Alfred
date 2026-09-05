@@ -1,4 +1,4 @@
-"""WarmApply · docx_to_pdf — DOCX -> text-based PDF via LibreOffice headless.
+"""Alfred · docx_to_pdf — DOCX -> text-based PDF via LibreOffice headless.
 
 Wraps `soffice --headless --convert-to pdf`. Produces a REAL text PDF (ATS-safe),
 never an image. LibreOffice is a SYSTEM dependency (not pip) — see requirements.txt:
