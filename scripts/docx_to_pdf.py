@@ -93,37 +93,68 @@ def is_available() -> bool:
 _WRITER_MARKERS = ("swriter", "swriter.exe", "libswlo.so", "libswlo.dylib", "swriter.bin")
 
 
+# Files that identify a directory as a real LibreOffice *program* directory (as
+# opposed to a bin dir that merely holds a launcher). Writer's absence only means
+# something when we are looking inside one of these.
+_PROGRAM_DIR_MARKERS = ("soffice.bin", "soffice.exe", "libmergedlo.so",
+                        "libmergedlo.dylib", "types.rdb", "services.rdb")
+
+# Well-known program directories, checked IN ADDITION to anything derived from the
+# binary. Homebrew's cask installs a wrapper SCRIPT at /opt/homebrew/bin/soffice, so
+# realpath() on it resolves to the script itself and reveals nothing about where the
+# app actually lives — deriving the install dir from the binary alone is unreliable.
+def _known_program_dirs() -> tuple:
+    if os.name == "nt":
+        roots = [os.environ.get("ProgramFiles", r"C:\Program Files"),
+                 os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+                 os.environ.get("LOCALAPPDATA", "")]
+        return tuple(os.path.join(r, "LibreOffice", "program") for r in roots if r)
+    return (
+        # macOS app bundle: the binary sits in MacOS/, the modules in Frameworks/.
+        "/Applications/LibreOffice.app/Contents/Frameworks",
+        "/Applications/LibreOffice.app/Contents/MacOS",
+        os.path.expanduser("~/Applications/LibreOffice.app/Contents/Frameworks"),
+        "/usr/lib/libreoffice/program",
+        "/usr/lib64/libreoffice/program",
+        "/opt/libreoffice/program",
+    )
+
+
 def writer_available() -> Optional[bool]:
     """Whether the LibreOffice **Writer** module (the thing that reads .docx) is present.
 
-    Returns True if a Writer module was found next to the resolved binary, False if
-    the binary exists but Writer is definitively absent, and None when the install
-    layout is unrecognized — an unknown layout must not be reported as broken, since
-    a working install is the common case and a false alarm is worse than silence.
+    Returns True if a Writer module was found, False only when a directory we can
+    positively identify as a LibreOffice program dir contains no Writer, and None
+    when nothing conclusive was found. None is deliberately the fallback: a working
+    install whose layout we don't recognize must never be reported as broken, since
+    a false alarm is worse than staying quiet.
     """
     binary = find_soffice()
     if binary is None:
         return None  # nothing installed at all — that's find_soffice()'s story to tell
 
-    # Follow symlinks (/usr/bin/soffice -> /usr/lib/libreoffice/program/soffice) and
-    # check the real program dir, plus the macOS app-bundle's sibling Frameworks dir.
+    # Dirs derived from the binary (covers the Linux symlink chain
+    # /usr/bin/soffice -> /usr/lib/libreoffice/program/soffice) ...
     real = os.path.realpath(binary)
-    program_dir = os.path.dirname(real)
-    search_dirs = [
-        program_dir,
-        os.path.join(os.path.dirname(program_dir), "program"),
-        os.path.join(os.path.dirname(program_dir), "Frameworks"),  # macOS bundle
-    ]
+    near = os.path.dirname(real)
+    parent = os.path.dirname(near)
+    search_dirs = [near,
+                   os.path.join(parent, "program"),
+                   os.path.join(parent, "Frameworks")]
+    # ... plus the well-known roots, for installs whose launcher is a wrapper script.
+    search_dirs.extend(_known_program_dirs())
 
-    checked_any = False
+    saw_program_dir = False
     for d in search_dirs:
         if not os.path.isdir(d):
             continue
-        checked_any = True
         for marker in _WRITER_MARKERS:
             if os.path.exists(os.path.join(d, marker)):
                 return True
-    return False if checked_any else None
+        # Only a dir we can prove is a LibreOffice program dir may vote "missing".
+        if any(os.path.exists(os.path.join(d, m)) for m in _PROGRAM_DIR_MARKERS):
+            saw_program_dir = True
+    return False if saw_program_dir else None
 
 
 def convert(docx_path: str, out_dir: Optional[str] = None,
