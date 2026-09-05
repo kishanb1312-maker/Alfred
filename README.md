@@ -30,7 +30,7 @@ See [`SPEC.md`](SPEC.md) for the full design.
 Alfred installs as a **Claude Code plugin** — no cloning, no manual `cp`, no `.env` editing.
 
 ```
-/plugin marketplace add kishanb1312-maker/WarmApply
+/plugin marketplace add kishanb1312-maker/Alfred
 /plugin install alfred@alfred
 /alfred-setup      # first-run wizard (guided, conversational)
 /alfred-run        # run the pipeline (keep dry_run: true for the first pass)

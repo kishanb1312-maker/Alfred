@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Warm, human-in-the-loop job-application assistant: finds IT jobs, researches companies, tailors your resume truthfully, and applies via portal or direct recruiter email after you approve each one on Telegram.",
   "author": { "name": "Alfred" },
-  "homepage": "https://github.com/kishanb1312-maker/WarmApply",
-  "repository": "https://github.com/kishanb1312-maker/WarmApply",
+  "homepage": "https://github.com/kishanb1312-maker/Alfred",
+  "repository": "https://github.com/kishanb1312-maker/Alfred",
   "keywords": ["job-search", "job-application", "resume", "outreach", "human-in-the-loop", "automation"]
 }
