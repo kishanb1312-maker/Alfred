@@ -86,6 +86,46 @@ def is_available() -> bool:
     return find_soffice() is not None
 
 
+# Writer module filenames, by platform layout. A LibreOffice install WITHOUT Writer
+# still ships `soffice`, so the binary's presence alone does not mean .docx can be
+# opened — on Linux, `libreoffice-core` installs without `libreoffice-writer`, and
+# every conversion then fails with "source file could not be loaded".
+_WRITER_MARKERS = ("swriter", "swriter.exe", "libswlo.so", "libswlo.dylib", "swriter.bin")
+
+
+def writer_available() -> Optional[bool]:
+    """Whether the LibreOffice **Writer** module (the thing that reads .docx) is present.
+
+    Returns True if a Writer module was found next to the resolved binary, False if
+    the binary exists but Writer is definitively absent, and None when the install
+    layout is unrecognized — an unknown layout must not be reported as broken, since
+    a working install is the common case and a false alarm is worse than silence.
+    """
+    binary = find_soffice()
+    if binary is None:
+        return None  # nothing installed at all — that's find_soffice()'s story to tell
+
+    # Follow symlinks (/usr/bin/soffice -> /usr/lib/libreoffice/program/soffice) and
+    # check the real program dir, plus the macOS app-bundle's sibling Frameworks dir.
+    real = os.path.realpath(binary)
+    program_dir = os.path.dirname(real)
+    search_dirs = [
+        program_dir,
+        os.path.join(os.path.dirname(program_dir), "program"),
+        os.path.join(os.path.dirname(program_dir), "Frameworks"),  # macOS bundle
+    ]
+
+    checked_any = False
+    for d in search_dirs:
+        if not os.path.isdir(d):
+            continue
+        checked_any = True
+        for marker in _WRITER_MARKERS:
+            if os.path.exists(os.path.join(d, marker)):
+                return True
+    return False if checked_any else None
+
+
 def convert(docx_path: str, out_dir: Optional[str] = None,
             timeout: int = 120) -> str:
     """Convert `docx_path` to PDF in `out_dir` (default: alongside the docx).

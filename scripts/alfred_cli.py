@@ -431,16 +431,29 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     # 5) LibreOffice / soffice (advisory — needed only for DOCX→PDF at tailoring).
     #    Use the cross-platform finder so a Windows install off PATH is still detected.
+    #    Finding the binary is NOT enough: an install missing the Writer module still
+    #    ships `soffice` but cannot open a .docx, so probe Writer too or this check
+    #    reports green while every resume/cover-letter PDF silently fails to build.
+    writer: Optional[bool] = None
     try:
         import docx_to_pdf
         soffice = docx_to_pdf.find_soffice()
+        writer = docx_to_pdf.writer_available()
     except Exception:
         soffice = shutil.which("soffice") or shutil.which("libreoffice")
-    checks.append(("ok" if soffice else "warn", "LibreOffice (soffice)",
-                   soffice if soffice else
-                   "not found — install for PDF export: "
-                   "winget install TheDocumentFoundation.LibreOffice  /  "
-                   "brew install --cask libreoffice  /  apt-get install libreoffice"))
+    if not soffice:
+        checks.append(("warn", "LibreOffice (soffice)",
+                       "not found — install for PDF export: "
+                       "winget install TheDocumentFoundation.LibreOffice  /  "
+                       "brew install --cask libreoffice  /  apt-get install libreoffice"))
+    elif writer is False:
+        checks.append(("warn", "LibreOffice (soffice)",
+                       f"{soffice} — but the Writer module is MISSING, so .docx→PDF will "
+                       "fail and no resume/cover letter will be attached. Install it: "
+                       "apt-get install libreoffice-writer  (or the full libreoffice package)"))
+    else:
+        checks.append(("ok", "LibreOffice (soffice)",
+                       soffice + ("" if writer else "  (Writer module unverified)")))
 
     # 6) Notion MCP (advisory — reached via Claude Code connector, not .env)
     if env_vals.get("NOTION_API_KEY", "").strip():
