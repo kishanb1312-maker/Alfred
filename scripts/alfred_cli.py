@@ -381,7 +381,9 @@ _DEP_MODULES = [("yaml", "PyYAML"), ("docx", "python-docx"), ("requests", "reque
 
 
 def _mark(status: str) -> str:
-    return {"ok": "✅", "warn": "⚠️ ", "fail": "❌"}.get(status, "•")
+    # "info" is a stated fact, not something to act on — it renders as a neutral bullet
+    # and is excluded from the advisories list, unlike "warn".
+    return {"ok": "✅", "warn": "⚠️ ", "fail": "❌", "info": "•"}.get(status, "•")
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -455,12 +457,19 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         checks.append(("ok", "LibreOffice (soffice)",
                        soffice + ("" if writer else "  (Writer module unverified)")))
 
-    # 6) Notion MCP (advisory — reached via Claude Code connector, not .env)
+    # 6) Notion — informational, NOT a warning.
+    #    This cannot test the connection: Notion is reached through the Claude Code MCP
+    #    connector, which lives outside this process entirely, so all we can read here is
+    #    whether the optional direct-API-key escape hatch is set. A blank NOTION_API_KEY is
+    #    the NORMAL, intended state for the connector path — flagging it warned permanently
+    #    on a correct setup, which trains the reader to ignore doctor's warnings.
     if env_vals.get("NOTION_API_KEY", "").strip():
         checks.append(("ok", "Notion", "direct NOTION_API_KEY present"))
     else:
-        checks.append(("warn", "Notion",
-                       "via Claude Code Notion MCP connector — verify with /mcp in Claude Code"))
+        checks.append(("info", "Notion",
+                       "using the Claude Code MCP connector (no API key needed — this is "
+                       "the normal setup). Not checked here: run /mcp to confirm it is "
+                       "authorized."))
 
     # ---- render ----
     print("Alfred · doctor")
