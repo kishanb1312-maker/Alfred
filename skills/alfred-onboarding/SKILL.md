@@ -100,7 +100,7 @@ For each key below: explain briefly where it comes from, then have the user run
 
 | Key | Where the user gets it |
 |---|---|
-| `TELEGRAM_BOT_TOKEN` | Create **their OWN** bot in `@BotFather` (~2 min) → copy the token. **Each user must create their own bot** — a shared bot's `getUpdates` queue is consumed per-bot, so taps would be delivered to the wrong machine and the approval safety model breaks. |
+| `TELEGRAM_BOT_TOKEN` | Create **their OWN** bot in `@BotFather` (~2 min) → copy the token. Tell them to use **Alfred** as the display name; the `@username` must be globally unique and end in `bot`, so suggest `alfred_<theirname>_bot` (plain `alfred` is taken). Neither name is stored anywhere — only the token is. **Each user must create their own bot** — a shared bot's `getUpdates` queue is consumed per-bot, so taps would be delivered to the wrong machine and the approval safety model breaks. |
 | `GMAIL_ADDRESS` | A **dedicated** job-hunt Gmail (not their personal inbox). |
 | `GMAIL_APP_PASSWORD` | In that Gmail: enable 2-Step Verification → create an **App Password** for "Mail" (SMTP). Not their normal password. |
 | `HUNTER_API_KEY` **or** `APOLLO_API_KEY` *(optional)* | Hunter.io free tier or Apollo → API key. Optional; leave blank if unused. |

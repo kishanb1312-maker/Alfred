@@ -195,7 +195,7 @@ alfred/
 4. **Companies to blacklist** (e.g. current employer)
 5. **Email-finder API** — Hunter.io (free tier) or Apollo → API key
 6. **Dedicated job-hunt Gmail** + App Password
-7. **Telegram bot** — token + chat ID (create via `@BotFather`, ~2 min)
+7. **Telegram bot** — token + chat ID (create via `@BotFather`, ~2 min; name it "Alfred")
 8. **Notion** — workspace + integration (already connected here)
 9. **GitHub** — repo where the code lives
 10. **LinkedIn** — normal login, used locally by the browser, never committed

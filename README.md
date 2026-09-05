@@ -58,7 +58,7 @@ the plugin code stays read-only and updates with the plugin.
 
 | Service | What you do | Keys |
 |---|---|---|
-| **Telegram** | Create a bot in `@BotFather` (~2 min) → copy the token. Message the bot once, then run `alfred detect-telegram-chat-id`. **Not MCP** — the app calls the Bot API over HTTP with this token. | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` |
+| **Telegram** | Create a bot in `@BotFather` (~2 min) → name it **Alfred** → copy the token. Message the bot once, then run `alfred detect-telegram-chat-id`. **Not MCP** — the app calls the Bot API over HTTP with this token. | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` |
 | **Google / Gmail** | Use a **dedicated** job-hunt Gmail. Enable 2-Step Verification → create an **App Password** for "Mail". **Not OAuth, not MCP** — the app sends via SMTP with this app password. | `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` |
 | **Email finder** *(optional)* | Sign up for Hunter.io (free tier) or Apollo → copy the API key. | `HUNTER_API_KEY` *or* `APOLLO_API_KEY` |
 
@@ -77,6 +77,16 @@ effectively **3 `set-secret` runs + messaging the bot once**.
 > Telegram has one update queue per bot, so a shared bot would deliver one person's Approve/Skip tap to
 > someone else's machine, breaking the human-in-the-loop safety model. Creating a bot is ~2 min in
 > `@BotFather`; the wizard auto-detects your chat ID afterward.
+
+> **Naming your bot.** BotFather asks for two different things. The **display name** is what you
+> see at the top of the chat — call it **Alfred**; duplicates are fine, so everyone's bot can be
+> "Alfred". The **@username** must be globally unique and end in `bot`, so plain `@alfred` is long
+> gone — use something like `@alfred_yourname_bot`. Only the display name is the bot's "name"; the
+> username is just its address, and neither one appears anywhere in this repo.
+>
+> Already made a bot under the old name? Rename it in place — message `@BotFather`, send `/setname`,
+> pick the bot, type `Alfred`. Your token and chat ID don't change, so nothing in `.env` needs
+> touching. (`/setusername` changes the address too, if you care.)
 
 ---
 
