@@ -16,7 +16,9 @@ Public API (as required by the job-finder definition):
 
 Deduplication — a job is NOT new (drop it) if ANY of:
     1. its ``job_id`` is already in history, OR
-    2. a ``company + normalized-title`` pair matches an existing entry (case-insensitive), OR
+    2. a ``company + normalized-title`` pair matches an existing entry (case-insensitive) —
+       applied only when the company is known, since a null company would otherwise
+       collapse every company-less lead sharing a job title, OR
     3. its ``company`` is in ``blacklist_companies``.
 """
 
@@ -120,7 +122,11 @@ def is_new(job: Job, blacklist_companies: Optional[Iterable[str]] = None,
     if job_id in history:
         return False
 
-    if _pair_key(job.get("company"), job.get("title")) in _existing_pairs(history):
+    # Only match on company+title when the company is actually known — see the
+    # note in dedupe(). A null company makes the pair key "::<title>", which would
+    # match every other company-less lead sharing that job title.
+    if _normalize(job.get("company")) and \
+            _pair_key(job.get("company"), job.get("title")) in _existing_pairs(history):
         return False
 
     return True
@@ -172,8 +178,14 @@ def dedupe(jobs: Iterable[Job], blacklist_companies: Optional[Iterable[str]] = N
 
     for job in jobs:
         job_id = job.get("job_id")
-        pair = _pair_key(job.get("company"), job.get("title"))
-        if job_id in seen_ids or pair in seen_pairs:
+        # A company+title pair is only a meaningful identity when the company is
+        # actually known. Two different leads scraped with company=None (common for
+        # LinkedIn feed posts that never name the employer) share the key
+        # "::<title>" and would otherwise collapse into one, silently discarding a
+        # real lead. Fall back to id-only de-duping for those.
+        pair = (_pair_key(job.get("company"), job.get("title"))
+                if _normalize(job.get("company")) else None)
+        if job_id in seen_ids or (pair is not None and pair in seen_pairs):
             continue
         if _normalize(job.get("company")) in blacklist:
             continue
@@ -181,5 +193,6 @@ def dedupe(jobs: Iterable[Job], blacklist_companies: Optional[Iterable[str]] = N
             continue
         fresh.append(job)
         seen_ids.add(job_id)
-        seen_pairs.add(pair)
+        if pair is not None:
+            seen_pairs.add(pair)
     return fresh

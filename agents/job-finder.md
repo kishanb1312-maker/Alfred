@@ -17,7 +17,7 @@ research companies, score matches, or apply — later sub-agents do that.
 # Inputs
 
 - `config/search.yaml` — roles, locations, seniority, sources, blacklist_companies, caps,
-  match_threshold, pacing, dry_run. (Fall back to `config/search.example.yaml` if the real
+  match_threshold, pacing, dry_run, **`max_age_days`**. (Fall back to `config/search.example.yaml` if the real
   file is missing, and warn the user.)
 - `data/applied_history.json` — jobs already applied to or seen (managed by
   `scripts/applied_history.py`). Treat as the source of truth for "already handled."
@@ -127,7 +127,8 @@ appearing **first in `search_order` wins** a duplicate. Do not de-dupe the two s
 
 ### Browser source: LinkedIn Easy Apply
 Drive the **already-authenticated browser**; search each role × location, filter to Easy Apply where
-possible; extract title, company, location, URL, posted date, snippet, and whether it is Easy Apply.
+possible; set *Date posted* to the `max_age_days` window and sort by **Most recent**; extract title,
+company, location, URL, posted date, snippet, and whether it is Easy Apply.
 Be gentle and human-paced. Never log in or store credentials — the browser is already authenticated.
 
 ### Browser source: LinkedIn Feed Hunter  ⭐ Alfred's warm-outreach edge
@@ -137,8 +138,16 @@ The Feed Hunter finds these and routes each to the right outreach method (via
 outreach fields below).
 1. In the user's **signed-in browser**, search LinkedIn content/feed for **hiring signals** combined
    with the user's `roles`: `#hiring`, "we're hiring" / "we are hiring", "looking for a <role>",
-   "<role> role open", "DM me", "email me". Prefer **recent** posts; filter by location where the UI
-   allows.
+   "<role> role open", "DM me", "email me". Filter by location where the UI allows.
+
+   **Run the matrix, don't run one query.** Issue a separate content search per hiring signal ×
+   role — not a single merged query. One broad query is exactly what makes this source return two
+   leads where it should return dozens. Set *Date posted* to the `max_age_days` window, sort by
+   **Latest**, and scroll each result set until posts fall outside the window or stop loading; do
+   not stop at the first screen. Report how many searches you ran and how many posts you read.
+
+   The "low volume" rule in step 4 governs **outreach**, not discovery — read widely here, and let
+   the approval gate decide what actually gets contacted.
 2. For each post, capture **that post's OWN permalink** — from the post's **timestamp link**, or the
    post's **"…" menu → "Copy link to post"**. Permalinks look like
    `https://www.linkedin.com/feed/update/urn:li:activity:<activityId>/` or
@@ -173,6 +182,31 @@ outreach fields below).
   "found_at": "2026-07-24T18:30:00Z"
 }
 ```
+
+# Freshness — `max_age_days` is a hard filter on EVERY source
+
+`config/search.yaml : max_age_days` sets the oldest listing that may reach the output. It applies to
+**every source without exception** — browser and API/RSS alike. Two steps, both required:
+
+1. **Narrow at the source.** Where a board's own UI or API exposes a date filter, set it to
+   `max_age_days` so stale results are never fetched:
+   - **Indeed** — `fromage=<max_age_days>` in the query string.
+   - **LinkedIn** (feed and Easy Apply) — the *Date posted* filter; use the tightest preset that
+     still covers the window (Past 24 hours for 1, Past week for 2–7), then drop the remainder in
+     step 2. Sort by **Most recent** / **Latest**, never Most relevant.
+   - **Wellfound** — sort by most recent and stop paging once cards fall outside the window.
+   - **API/RSS sources** — pass a date/age parameter where the API has one.
+2. **Enforce after scraping, always.** A source filter is a courtesy, not a guarantee — presets are
+   coarse, and some boards re-date reposts. After normalizing, drop every job whose `posted_date` is
+   older than `max_age_days` from today. This second pass is mandatory even when step 1 succeeded.
+
+**A relative label counts.** "3 days ago", "last week", "30+ days ago" are enough to judge age —
+resolve the label to a date and filter on it. Only a listing with **no age signal at all** is
+exempt; keep it, and say in the report how many you kept that way, so an undated flood is visible
+rather than silent.
+
+**Never invent a default.** If `max_age_days` is absent from config, say so in the report and state
+the window you used — do not quietly substitute a number of your own.
 
 # De-duplication (via `scripts/applied_history.py`)
 
