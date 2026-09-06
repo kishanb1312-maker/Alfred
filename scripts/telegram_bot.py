@@ -91,7 +91,7 @@ def _derive_channel(job: Dict[str, Any]) -> str:
 # Card 1 (job review) answers approve/skip. Card 2 (email preview) answers
 # send/cancel. Both ride the same '<decision>|<job_id>' payload, so one parser and
 # one poll loop serve both gates.
-_DECISIONS = ("approve", "skip", "send", "cancel")
+_DECISIONS = ("approve", "skip", "send", "edit", "cancel")
 
 
 def make_callback_data(decision: str, job_id: str) -> str:
@@ -208,6 +208,15 @@ def parse_updates(updates: Any, current_offset: int = 0) -> Tuple[List[Dict[str,
             events.append({"type": "command", "command": "pause", "update_id": uid})
         elif text.startswith("/resume"):
             events.append({"type": "command", "command": "resume", "update_id": uid})
+        elif text:
+            # Any other text is a candidate edit body. The poller decides whether an
+            # edit is actually awaited; parsing stays pure and keeps the raw text.
+            events.append({
+                "type": "text",
+                "text": (msg.get("text") or "").strip(),   # raw, not lower-cased
+                "reply_to": (msg.get("reply_to_message") or {}).get("message_id"),
+                "update_id": uid,
+            })
 
     new_offset = max_update_id + 1 if max_update_id >= current_offset else current_offset
     return events, new_offset
@@ -282,6 +291,101 @@ def _attachment_names(msg: Any) -> List[str]:
 
 
 EMAIL_DECISIONS = os.path.join(_DATA, "email_decisions.json")
+EMAIL_DRAFTS = os.path.join(_DATA, "email_drafts.json")
+AWAITING_EDIT = os.path.join(_DATA, "email_awaiting_edit.json")
+
+
+def _read_json(path: str, default: Any) -> Any:
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return default
+
+
+def _write_json(path: str, value: Any) -> None:
+    os.makedirs(_DATA, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(value, fh, indent=2, sort_keys=True)
+
+
+def save_draft(job_id: str, to: str, subject: str, body: str,
+               attachments: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Persist the email for `job_id` so Edit has something to edit.
+
+    Without this the message existed only inside whichever agent turn built it, and
+    an edit would have nothing to apply to.
+    """
+    drafts = _read_json(EMAIL_DRAFTS, {})
+    if not isinstance(drafts, dict):
+        drafts = {}
+    draft = {"to": to, "subject": subject, "body": body,
+             "attachments": list(attachments or []), "updated_at": _now_iso()}
+    drafts[job_id] = draft
+    _write_json(EMAIL_DRAFTS, drafts)
+    return draft
+
+
+def load_draft(job_id: str) -> Optional[Dict[str, Any]]:
+    """The current draft for `job_id` — edits included — or None."""
+    drafts = _read_json(EMAIL_DRAFTS, {})
+    d = drafts.get(job_id) if isinstance(drafts, dict) else None
+    return d if isinstance(d, dict) else None
+
+
+def parse_edit_text(raw: str) -> Dict[str, Optional[str]]:
+    """Split an edit reply into {subject, body}.
+
+    A first line of "Subject: ..." retitles the email and the rest becomes the body;
+    otherwise the whole text is the body and the subject is left alone (None). This
+    keeps the common case — retype the body — a plain paste with no syntax to learn.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return {"subject": None, "body": ""}
+    first, _, rest = text.partition("\n")
+    if first.strip().lower().startswith("subject:"):
+        return {"subject": first.split(":", 1)[1].strip() or None,
+                "body": rest.strip()}
+    return {"subject": None, "body": text}
+
+
+def apply_edit(job_id: str, raw: str) -> Optional[Dict[str, Any]]:
+    """Apply an edit reply to the stored draft. Returns the updated draft, or None.
+
+    Attachments are untouched: the user is editing words, and silently dropping the
+    resume because they retyped the body would be the worst possible reading of an edit.
+    """
+    draft = load_draft(job_id)
+    if draft is None:
+        return None
+    parsed = parse_edit_text(raw)
+    if not parsed["body"]:
+        return None  # an empty edit is not an instruction to send an empty email
+    draft["body"] = parsed["body"]
+    if parsed["subject"]:
+        draft["subject"] = parsed["subject"]
+    draft["updated_at"] = _now_iso()
+    drafts = _read_json(EMAIL_DRAFTS, {})
+    if not isinstance(drafts, dict):
+        drafts = {}
+    drafts[job_id] = draft
+    _write_json(EMAIL_DRAFTS, drafts)
+    return draft
+
+
+def set_awaiting_edit(job_id: str) -> None:
+    """Mark that the next plain text message is an edit for `job_id`."""
+    _write_json(AWAITING_EDIT, {"job_id": job_id, "since": _now_iso()})
+
+
+def get_awaiting_edit() -> Optional[str]:
+    rec = _read_json(AWAITING_EDIT, {})
+    return rec.get("job_id") if isinstance(rec, dict) else None
+
+
+def clear_awaiting_edit() -> None:
+    _write_json(AWAITING_EDIT, {})
 
 
 def record_email_decision(job_id: str, decision: str) -> bool:
@@ -325,6 +429,7 @@ def build_email_keyboard(job_id: str) -> Dict[str, Any]:
     return {
         "inline_keyboard": [[
             {"text": "📧 Send", "callback_data": make_callback_data("send", job_id)},
+            {"text": "✏️ Edit", "callback_data": make_callback_data("edit", job_id)},
             {"text": "🚫 Cancel", "callback_data": make_callback_data("cancel", job_id)},
         ]]
     }
@@ -410,6 +515,64 @@ def send_email_preview_card(job: Dict[str, Any], msg: Any) -> int:
         "reply_markup": json.dumps(build_email_keyboard(job.get("job_id", ""))),
         "disable_web_page_preview": True,
     })
+    return resp["result"]["message_id"]
+
+
+def send_edit_prompt(job: Dict[str, Any]) -> int:
+    """Ask for the replacement text after an Edit tap, and arm the edit capture."""
+    job_id = job.get("job_id", "")
+    set_awaiting_edit(job_id)
+    text = (
+        f"✏️ EDITING — {job.get('company') or 'this email'}\n"
+        f"{'─' * 28}\n"
+        "Reply to this message with the new email.\n\n"
+        "• Plain text replaces the body.\n"
+        "• To change the subject too, make the FIRST line:\n"
+        "  Subject: your new subject\n\n"
+        "Attachments stay as they are. I'll show you the updated email with "
+        "Send / Edit / Cancel again — nothing goes out until you tap Send."
+    )
+    resp = _api("sendMessage", data={
+        "chat_id": _chat_id(),
+        "text": text,
+        "reply_markup": json.dumps({"force_reply": True}),
+        "disable_web_page_preview": True,
+    })
+    return resp["result"]["message_id"]
+
+
+def send_result_notice(job: Dict[str, Any], result: Dict[str, Any]) -> int:
+    """Report what actually happened to a Send tap — success or the real error."""
+    status = (result or {}).get("status", "UNKNOWN")
+    company = job.get("company") or "the company"
+    to = (result or {}).get("to") or "?"
+    subject = (result or {}).get("subject") or "?"
+    files = ", ".join(f for f in ((result or {}).get("attachments") or []) if f) or "none"
+
+    if status == "SENT":
+        head = f"✅ SENT — {company}"
+        tail = f"Delivered to {to} at {_now_iso()}."
+    elif status == "DRY_RUN":
+        head = f"🧪 DRY RUN — {company}"
+        tail = ("Nothing was sent: dry_run is ON in config/search.yaml. "
+                "This is exactly what WOULD have gone out.")
+    elif status == "EMAIL_PAUSED":
+        head = f"⏸️ NOT SENT — {company}"
+        tail = ((result or {}).get("reason")
+                or "email channel auto-paused; clear data/email_paused.flag")
+    else:
+        head = f"❌ FAILED — {company}"
+        tail = (f"{(result or {}).get('error') or 'unknown error'}\n\n"
+                "The email was NOT sent. The draft is kept, so you can tap Edit "
+                "and try again once the cause is fixed.")
+
+    text = (f"{head}\n{'─' * 28}\n"
+            f"To:      {to}\n"
+            f"Subject: {subject}\n"
+            f"Files:   {files}\n"
+            f"{'─' * 28}\n{tail}")
+    resp = _api("sendMessage", data={
+        "chat_id": _chat_id(), "text": text, "disable_web_page_preview": True})
     return resp["result"]["message_id"]
 
 

@@ -66,6 +66,15 @@ Approval of the job is **not** approval of the email. Before sending anything, c
   around: the user has not seen the preview, or has not decided. Note it and move on. The
   job stays eligible on a later run once the tap arrives.
 
+**Send the edited draft, not the original.** Build the outgoing message from
+`load_draft(job_id)` — the user may have tapped Edit and rewritten the body or subject, and
+that draft is the version they approved. Rebuilding from the original tailored email would
+send something they explicitly changed.
+
+**Report the outcome.** Use `send_safe(msg, dry_run)` and pass the result to
+`send_result_notice(job, result)` so every Send tap is answered in Telegram — success or the
+real error.
+
 Never send an email whose decision is not `"cleared"`, and never treat a missing decision as
 consent. `dry_run` still applies on top of this: cleared plus `dry_run: true` means log what
 would be sent, not send it.

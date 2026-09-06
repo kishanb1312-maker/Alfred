@@ -46,9 +46,10 @@ for d in ("approve", "skip", "send", "cancel"):
 
 print("\nKeyboards")
 kb = tb.build_email_keyboard("j:1")["inline_keyboard"][0]
-check("two buttons", len(kb), 2)
+check("three buttons", len(kb), 3)
 check("Send carries send|", kb[0]["callback_data"], "send|j:1")
-check("Cancel carries cancel|", kb[1]["callback_data"], "cancel|j:1")
+check("Edit carries edit|", kb[1]["callback_data"], "edit|j:1")
+check("Cancel carries cancel|", kb[2]["callback_data"], "cancel|j:1")
 
 print("\nPreview is built from the REAL message")
 with tempfile.TemporaryDirectory() as td:
@@ -108,8 +109,89 @@ with tempfile.TemporaryDirectory() as td:
 
     check("unknown job still None", tb.email_decision("never-seen"), None)
 
+print("\nEdit — draft store, parsing, round trip")
+with tempfile.TemporaryDirectory() as td:
+    tb._DATA = td
+    tb.EMAIL_DRAFTS = os.path.join(td, "email_drafts.json")
+    tb.AWAITING_EDIT = os.path.join(td, "email_awaiting_edit.json")
+    tb.EMAIL_DECISIONS = os.path.join(td, "email_decisions.json")
+
+    check("Edit button present", [b["text"] for b in tb.build_email_keyboard("j:1")["inline_keyboard"][0]],
+          ["📧 Send", "✏️ Edit", "🚫 Cancel"])
+    check("edit callback parses", tb.parse_callback_data("edit|j:1"),
+          {"decision": "edit", "job_id": "j:1"})
+    check("edit payload ≤ 64B",
+          len(tb.make_callback_data("edit", "linkedin_easy_apply:4012345678").encode()) <= 64, True)
+
+    tb.save_draft("j:1", "hr@acme.com", "Original subject", "Original body",
+                  ["/tmp/CV.pdf"])
+    check("draft persisted", tb.load_draft("j:1")["subject"], "Original subject")
+
+    check("body-only edit", tb.parse_edit_text("New body here"),
+          {"subject": None, "body": "New body here"})
+    check("Subject: line retitles", tb.parse_edit_text("Subject: Better title\nNew body"),
+          {"subject": "Better title", "body": "New body"})
+
+    d = tb.apply_edit("j:1", "Rewritten body")
+    check("body replaced", d["body"], "Rewritten body")
+    check("subject untouched by a body-only edit", d["subject"], "Original subject")
+    check("attachments survive an edit", d["attachments"], ["/tmp/CV.pdf"])
+
+    d = tb.apply_edit("j:1", "Subject: Final title\nFinal body")
+    check("subject replaced when given", d["subject"], "Final title")
+    check("edits are cumulative, not additive", d["body"], "Final body")
+
+    check("empty edit refused (never sends an empty email)", tb.apply_edit("j:1", "   "), None)
+    check("edit on unknown job → None", tb.apply_edit("nope", "text"), None)
+
+    tb.set_awaiting_edit("j:1")
+    check("awaiting-edit armed", tb.get_awaiting_edit(), "j:1")
+    tb.clear_awaiting_edit()
+    check("awaiting-edit cleared", tb.get_awaiting_edit(), None)
+
+    check("Edit records NO decision (nothing is decided by editing)",
+          tb.email_decision("j:1"), None)
+
+print("\nPlain text reaches the poller as an edit candidate")
+ev, off = tb.parse_updates({"result": [
+    {"update_id": 10, "message": {"text": "My rewritten email body"}},
+    {"update_id": 11, "message": {"text": "/pause"}},
+]}, 0)
+check("text event emitted", ev[0]["type"], "text")
+check("raw case preserved (not lower-cased)", ev[0]["text"], "My rewritten email body")
+check("/pause still a command", ev[1]["type"], "command")
+check("offset advanced", off, 12)
+
+print("\nSend result notices — every tap gets an answer")
+sent = []
+tb._api = lambda m, data=None, files=None: (sent.append(data), {"result": {"message_id": 1}})[1]
+tb._chat_id = lambda: "123"
+job = {"company": "Acme", "job_id": "j:1"}
+for status, needle in [("SENT", "✅ SENT"), ("DRY_RUN", "🧪 DRY RUN"),
+                       ("EMAIL_PAUSED", "⏸️ NOT SENT"), ("FAILED", "❌ FAILED")]:
+    sent.clear()
+    tb.send_result_notice(job, {"status": status, "to": "hr@acme.com", "subject": "App",
+                                "attachments": [], "error": "SMTPAuthenticationError: 535"})
+    check(f"{status} reported", needle in sent[0]["text"], True)
+check("real error text surfaced, not a generic message",
+      "SMTPAuthenticationError: 535" in sent[0]["text"], True)
+
+print("\nsend_safe turns an SMTP crash into a reportable result")
+msg = es.build_message(to="a@b.com", subject="s", body="b", from_addr="me@gmail.com")
+_orig = es._smtp_send
+es._smtp_send = lambda m: (_ for _ in ()).throw(RuntimeError("connection refused"))
+try:
+    res = es.send_safe(msg, dry_run=False)
+    check("FAILED not raised", res["status"], "FAILED")
+    check("error carried for reporting", "connection refused" in res["error"], True)
+finally:
+    es._smtp_send = _orig
+check("dry run still short-circuits before SMTP",
+      es.send_safe(msg, dry_run=True)["status"], "DRY_RUN")
+
 print("\n" + "=" * 74)
 print(f"RESULT: {'PASS ✅' if ok else 'FAIL ❌'} — two-gate flow: preview built from the real"
-      " message, email sends only on an explicit Send tap. Nothing sent.")
+      " message, editable before sending, sends only on an explicit Send tap,\n"
+      " and every tap is answered. Nothing sent.")
 print("=" * 74 + "\n")
 sys.exit(0 if ok else 1)

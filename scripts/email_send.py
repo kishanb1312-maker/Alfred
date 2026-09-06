@@ -124,3 +124,22 @@ def send(msg: EmailMessage, dry_run: bool = True) -> Dict[str, Any]:
 
     _smtp_send(msg)
     return {"status": "SENT", **summary}
+
+
+def send_safe(msg: EmailMessage, dry_run: bool = True) -> Dict[str, Any]:
+    """`send`, but an SMTP failure becomes a FAILED result instead of an exception.
+
+    The Telegram flow reports the outcome of every Send tap back to the user, so a
+    refused login or a rejected recipient has to arrive as a message they can read —
+    not as a traceback that ends the run and leaves the other approved jobs unsent.
+    """
+    try:
+        return send(msg, dry_run=dry_run)
+    except Exception as exc:  # noqa: BLE001 — every failure mode is reportable
+        return {
+            "status": "FAILED",
+            "error": f"{type(exc).__name__}: {exc}",
+            "to": msg["To"],
+            "subject": msg["Subject"],
+            "attachments": attached_filenames(msg),
+        }

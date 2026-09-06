@@ -71,12 +71,31 @@ message that would leave the user's mailbox:
 2. Send it with `scripts/telegram_bot.py :: send_email_preview_card(job, msg)`. The card
    shows From, To, Subject, the body, and the real attachment filenames, with
    **[📧 Send] [🚫 Cancel]**.
-3. Record the answer with `record_email_decision(job_id, "cleared"|"cancelled")` when the
-   tap arrives. First answer wins — a cancelled email cannot be un-cancelled by a stray
-   later tap.
+3. **Save the draft** with `save_draft(job_id, to, subject, body, attachments)` before
+   sending the card. Edit needs something to edit; without a persisted draft the message
+   would exist only inside the turn that built it.
+4. Handle the tap:
+   - **Send** → `record_email_decision(job_id, "cleared")`.
+   - **Cancel** → `record_email_decision(job_id, "cancelled")`.
+   - **Edit** → record **nothing**. Call `send_edit_prompt(job)`, which asks for the new
+     text and arms the capture. The next plain-text message from the user (event type
+     `text`, with `get_awaiting_edit()` naming the job) is the replacement: pass it to
+     `apply_edit(job_id, text)`, call `clear_awaiting_edit()`, rebuild the message from the
+     updated draft, and **send the preview card again**. The user can edit as many times as
+     they like; nothing is decided until they tap Send or Cancel.
+
+   First answer wins for Send/Cancel — a cancelled email cannot be un-cancelled by a stray
+   later tap. Edit is deliberately outside that rule, because editing is not an answer.
 
 **Sending this card sends no email.** Nothing reaches a company until the user taps Send and
 `email_decision(job_id)` reads back `"cleared"`.
+
+**Every Send tap gets an answer.** After the send is attempted, report the outcome with
+`send_result_notice(job, result)` — ✅ sent, 🧪 dry run, ⏸️ channel paused, or ❌ failed with
+the real error text. Use `scripts/email_send.py :: send_safe(msg, dry_run)` rather than
+`send`, so an SMTP failure comes back as a `FAILED` result to report instead of an exception
+that ends the run and leaves the remaining approved jobs unsent. Never leave a tap
+unanswered: silence after Send is indistinguishable from a job quietly lost.
 
 **Cancel is email-only.** The portal application is a separate channel and still proceeds —
 say so on the card so a tap on Cancel is never read as abandoning the job.
