@@ -6,7 +6,7 @@ Demonstrates the de-dupe pipeline end-to-end:
   3. run them through scripts/applied_history.py de-dupe,
   4. print the normalized, de-duplicated output list.
 
-This does NOT call LinkedIn or Adzuna. Every job below is fake sample data,
+This does NOT call LinkedIn or any job board. Every job below is fake sample data,
 labeled as such, per the "No fabrication" guardrail (dry-run only).
 
 Config is parsed with PyYAML's ``yaml.safe_load`` — the same call the real
@@ -60,8 +60,8 @@ def sample_jobs() -> list:
             "found_at": "2026-07-24T18:30:00Z",
         },
         {
-            "job_id": "adzuna:FAKE-0002",
-            "source": "adzuna",
+            "job_id": "wellfound:FAKE-0002",
+            "source": "wellfound",
             "title": "DevOps Engineer",
             "company": "Initech",
             "company_domain": "initech.example",
@@ -74,8 +74,8 @@ def sample_jobs() -> list:
         },
         {
             # Duplicate of 0001 by company + normalized title (different casing/id)
-            "job_id": "adzuna:FAKE-0003",
-            "source": "adzuna",
+            "job_id": "wellfound:FAKE-0003",
+            "source": "wellfound",
             "title": "site   reliability   ENGINEER",
             "company": "globex systems",
             "company_domain": None,

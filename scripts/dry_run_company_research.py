@@ -73,8 +73,8 @@ def fake_jobs() -> list:
             "found_at": "2026-07-24T18:30:00Z",
         },
         {
-            "job_id": "adzuna:FAKE-B2",
-            "source": "adzuna",
+            "job_id": "wellfound:FAKE-B2",
+            "source": "wellfound",
             "title": "Frontend Engineer",
             "company": "Initech",
             "company_domain": "initech.example",
@@ -123,7 +123,7 @@ MOCK_ANALYSIS = {
         "recent_signal": "[MOCK] announced a multi-region platform launch",
         "website": "https://globex.example",
     },
-    "adzuna:FAKE-B2": {
+    "wellfound:FAKE-B2": {
         "summary": "[MOCK] B2B web app studio shipping React products.",
         "industry": "Software",
         "size": "51-200",
@@ -164,7 +164,7 @@ def mock_waterfall(job: dict) -> dict:
             "source": "hunter",
             "is_personal": True,
         }
-    if job["job_id"] == "adzuna:FAKE-B2":
+    if job["job_id"] == "wellfound:FAKE-B2":
         # Step 1: generic inbox, lower confidence.
         return {
             "candidate": "careers@initech.example",

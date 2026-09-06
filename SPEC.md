@@ -232,7 +232,7 @@ move to the next sub-agent
   agent live.
 - Short prompt example:
   > "Read the attached `job-finder.md`. Build it as described: create the file(s), implement the
-  > job-search logic for LinkedIn Easy Apply + Adzuna, and show me the code + a dry-run output.
+  > job-search logic for LinkedIn Easy Apply, and show me the code + a dry-run output.
   > Ask me if anything is unclear."
 
 ### Build order (one by one, dependencies first)

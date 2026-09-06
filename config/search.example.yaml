@@ -15,7 +15,6 @@ seniority: mid
 
 sources:
   - linkedin_easy_apply
-  - adzuna
 
 # The order sources are searched each run. ALL implemented sources are searched EVERY run —
 # this list only sets the sequence and decides which source "wins" a duplicate (first one wins).
@@ -27,7 +26,6 @@ search_order:
   - indeed                  # 3 — browser (India volume)                             [not built yet]
   - we_work_remotely        # 4 — RSS                                                [not built yet]
   - wellfound               # 5 — browser                                            [not built yet]
-  - adzuna                  # 6 — API (broad aggregator)
   - remoteok                # 7 — API  ◄ built in this task
   - jobspresso              # 8 — RSS                                                [not built yet]
   - greenhouse_lever        # 9 — per-company JSON

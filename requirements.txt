@@ -3,7 +3,7 @@
 
 python-docx>=1.1.0      # read/edit the master resume DOCX (text only, format locked)
 PyYAML>=6.0             # read config/search.yaml + config/profile.yaml
-requests>=2.31.0        # email-finder API (Hunter/Apollo), Adzuna, etc.
+requests>=2.31.0        # email-finder API (Hunter/Apollo), job-board APIs, etc.
 email-validator>=2.1.0  # syntax validation for discovered emails
 dnspython>=2.6.0        # MX-record check during email verification
 

@@ -32,7 +32,7 @@ errors returns `[]` and the run **continues**.
 
 ## Two kinds of source
 
-- **Python sources (API/RSS)** — `adzuna`, `remoteok`, `we_work_remotely`, `jobspresso`,
+- **Python sources (API/RSS)** — `remoteok`, `we_work_remotely`, `jobspresso`,
   `greenhouse_lever`. These have a `fetch()` in `scripts/sources/` and are run for you by
   `scripts/source_dispatch.py :: dispatch(...)` (read-only HTTP, normalized to the canonical shape).
 - **Browser sources** — `linkedin_easy_apply`, `linkedin_feed`, `indeed`, `wellfound`. These have
@@ -93,7 +93,6 @@ that turned out to be — per browser source), then run **ONE** order-preserving
 appearing **first in `search_order` wins** a duplicate. Do not de-dupe the two sets separately.
 
 ### Python source examples
-- **adzuna** — Adzuna REST API (needs free `ADZUNA_APP_ID` + `ADZUNA_APP_KEY` in `.env`).
 - **remoteok** — `scripts/sources/remoteok.py`: GET the RemoteOK API (real User-Agent), skip the
   metadata element, normalize + role-filter.
 
@@ -126,10 +125,29 @@ appearing **first in `search_order` wins** a duplicate. Do not de-dupe the two s
    unauthenticated, unfamiliar browser profile is what triggers the block page fastest.
 
 ### Browser source: LinkedIn Easy Apply
-Drive the **already-authenticated browser**; search each role × location, filter to Easy Apply where
-possible; set *Date posted* to the `max_age_days` window and sort by **Most recent**; extract title,
-company, location, URL, posted date, snippet, and whether it is Easy Apply.
-Be gentle and human-paced. Never log in or store credentials — the browser is already authenticated.
+1. In the **already-authenticated browser**, go to `https://www.linkedin.com/jobs/search/` and run
+   **one search per role × location** from `config/search.yaml` — not a single merged query.
+2. Apply LinkedIn's own filters before reading anything: **Easy Apply = on**, **Date posted** set to
+   the `max_age_days` window, **Sort by = Most recent**. Also apply `seniority` (Experience level)
+   where the UI offers it.
+3. Read the rendered cards, **scrolling the result pane until postings fall outside the window or
+   stop loading** — the list is virtualized, so the first screen is roughly 25 of them and stopping
+   there is what makes this source look empty.
+4. For each card capture: `id` (the numeric posting id — from the card's `data-job-id`, the
+   `/jobs/view/<id>/` link, or `?currentJobId=<id>`), title, company, location, `workplace_type`
+   (Remote/Hybrid/On-site), posted (the relative age label is fine), snippet, and whether an
+   **Easy Apply** badge is actually present. Pass each to
+   `scripts/sources/linkedin_easy_apply.py :: normalize(card)` — or the whole list to
+   `normalize_cards(cards, roles)`, which drops non-Easy-Apply and unidentifiable cards for you.
+5. **URLs:** store the specific posting (`/jobs/view/<id>/`). A `/jobs/search...` URL is a query, not
+   a job — `clean_job_url` rebuilds the posting link when the search URL carries `currentJobId`, and
+   returns `null` otherwise. **Never store the search URL.**
+6. **`easy_apply` must reflect what you saw.** Set it only when the badge was actually on the card.
+   Claiming it on a posting that really routes to a company portal sends the application-agent down
+   a path that does not exist.
+7. **Be gentle and human-paced** (respect `pacing`). On a **login wall, CAPTCHA, or block**, skip the
+   source with a one-line note and continue the run. Never log in or store credentials — the browser
+   is already authenticated.
 
 ### Browser source: LinkedIn Feed Hunter  ⭐ Alfred's warm-outreach edge
 "We're hiring" posts don't go through job portals — the poster wants a **DM, comment, or email**.
@@ -170,7 +188,7 @@ outreach fields below).
 ```json
 {
   "job_id": "linkedin:3891234567",        // "<source>:<stable id>"
-  "source": "linkedin_easy_apply",         // or "adzuna" / "remoteok" / ...
+  "source": "linkedin_easy_apply",         // or "remoteok" / "wellfound" / ...
   "title": "Site Reliability Engineer",
   "company": "Acme Corp",
   "company_domain": null,                   // fill if known; else null

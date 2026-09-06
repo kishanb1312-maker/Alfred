@@ -150,7 +150,7 @@ def main() -> int:
           f"missing={missing}")
 
     ok_callback_fmt = (tb.parse_callback_data(
-        tb.make_callback_data("skip", "adzuna:X")) == {"decision": "skip", "job_id": "adzuna:X"})
+        tb.make_callback_data("skip", "wellfound:X")) == {"decision": "skip", "job_id": "wellfound:X"})
     failures += [] if ok_callback_fmt else ["callback_data round-trip broken"]
     print(f"  [{'OK' if ok_callback_fmt else 'XX'}] callback_data round-trips (make↔parse)")
 
