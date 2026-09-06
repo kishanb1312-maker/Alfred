@@ -13,13 +13,11 @@ locations:
 
 seniority: mid
 
-sources:
-  - linkedin_easy_apply
 
 # The order sources are searched each run. ALL implemented sources are searched EVERY run —
 # this list only sets the sequence and decides which source "wins" a duplicate (first one wins).
 # It does NOT cap how many jobs are found. Daily caps limit APPLYING, not finding.
-# Sources not yet implemented are skipped. (search_order takes precedence over `sources:`.)
+# Sources not yet implemented are skipped. This is the ONE list that decides which sources run.
 search_order:
   - linkedin_easy_apply     # 1
   - linkedin_feed           # 2 — "we're hiring" posts (recent + location filtered)  [not built yet]

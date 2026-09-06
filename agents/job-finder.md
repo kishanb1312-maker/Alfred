@@ -25,7 +25,10 @@ research companies, score matches, or apply — later sub-agents do that.
 # Sources — search ALL of them every run (order = `search_order` in config)
 
 Query **every implemented source on every run**, in the sequence given by `config/search.yaml :
-search_order` (falls back to the flat `sources:` list). **Do NOT stop early and do NOT cap how many
+search_order` — the one list that decides which sources run. (`source_dispatch` still falls back
+to a flat `sources:` list if `search_order` is ever absent, but the shipped config no longer
+carries one: two lists is what previously let `linkedin_easy_apply` sit in config, look
+configured, and never run.) **Do NOT stop early and do NOT cap how many
 jobs you find** — the daily caps limit *applying* (handled later by the application-agent), never
 finding. A source listed but not yet implemented is **skipped with a one-line note**; a source that
 errors returns `[]` and the run **continues**.
@@ -156,7 +159,9 @@ The Feed Hunter finds these and routes each to the right outreach method (via
 outreach fields below).
 1. In the user's **signed-in browser**, search LinkedIn content/feed for **hiring signals** combined
    with the user's `roles`: `#hiring`, "we're hiring" / "we are hiring", "looking for a <role>",
-   "<role> role open", "DM me", "email me". Filter by location where the UI allows.
+   "<role> role open", "DM me", "email me". Run each signal against each **location** as well,
+   using LinkedIn's own location facet where the content search offers it and the location name
+   in the query text where it does not.
 
    **Run the matrix, don't run one query.** Issue a separate content search per hiring signal ×
    role — not a single merged query. One broad query is exactly what makes this source return two
@@ -171,7 +176,17 @@ outreach fields below).
    `https://www.linkedin.com/feed/update/urn:li:activity:<activityId>/` or
    `https://www.linkedin.com/posts/<author>_<slug>-activity-<activityId>-<hash>`. Pass it as the
    post's `url` (or `permalink`). **NEVER store the search/feed URL** you used to find the posts — a
-   `/search/...` or bare `/feed/` link is rejected to `null`. Also extract: role, company (poster's
+   `/search/...` or bare `/feed/` link is rejected to `null`.
+
+   **Known limitation — read this before reporting `url: null`.** LinkedIn's *content search* results
+   render posts without an exposed permalink in the DOM, and clipboard reads are blocked, so the "…"
+   menu route does not work there. When that happens, do **not** settle for a null URL across the
+   board: re-read the same posts from a surface that does expose the timestamp anchor — a **hashtag
+   feed** (`/feed/hashtag/<tag>/`), the **recruiter's own profile activity** page, or the post opened
+   in its own tab — and take the permalink from the timestamp link there. Only after that surface
+   also fails is `url: null` correct, and the note must say which surfaces you tried. A lead with a
+   real `recruiter_profile` is still usable for outreach, so a null URL is a degraded lead, not a
+   discarded one. Also extract: role, company (poster's
    company or named), the **recruiter (poster) name + profile URL**, any **email stated in the post**,
    and the intended response. Call `normalize(post)`.
 3. **Decide `outreach_method`** from the post: an email present → `email`; an application link →
@@ -225,6 +240,24 @@ rather than silent.
 
 **Never invent a default.** If `max_age_days` is absent from config, say so in the report and state
 the window you used — do not quietly substitute a number of your own.
+
+# Seniority and location apply to EVERY source too
+
+`max_age_days` is not the only filter that was being applied unevenly. Treat these the same way —
+narrow at the source where the UI allows, then enforce after scraping:
+
+- **`seniority`** — set the board's experience-level filter where it has one (LinkedIn *Experience
+  level*, Wellfound's experience facet, Indeed's job-level facet). Where it has none, drop obvious
+  mismatches by title after normalizing: an "Intern", "Junior", "Trainee", "Graduate", "Fresher",
+  "Lead", "Head of", "Director", "VP" or "Principal" title against a `mid, senior` config is not a
+  match. When a title carries no level signal at all, keep it — ambiguity is not grounds to discard.
+- **`locations`** — every source runs **one search per role × location**, never a merged query, and
+  `Remote` is its own search. After scraping, drop listings whose location matches no configured
+  location and is not remote. Say in the report how many were dropped this way, per source, so an
+  over-tight location list is visible rather than silent.
+
+Applying a filter on only some sources is the failure mode to avoid: it makes one board look
+productive and another look empty for reasons that have nothing to do with the jobs on them.
 
 # De-duplication (via `scripts/applied_history.py`)
 
