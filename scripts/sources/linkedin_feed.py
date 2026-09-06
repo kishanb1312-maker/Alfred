@@ -64,8 +64,10 @@ def _email_in(text: str) -> Optional[str]:
     return m.group(0) if m else None
 
 
-# LinkedIn activity id inside a permalink, e.g. urn:li:activity:<id> or ...-activity-<id>-...
-_ACTIVITY_RE = re.compile(r"activity[:\-](\d+)")
+# LinkedIn post id inside a permalink. Posts appear as urn:li:activity:<id> (or the
+# ...-activity-<id>-... slug form) and, for company/reshared posts, urn:li:share:<id>
+# and urn:li:ugcPost:<id>. All three are real permalink forms.
+_ACTIVITY_RE = re.compile(r"(?:activity|share|ugcPost)[:\-](\d+)")
 
 
 def _activity_id(url: Optional[str]) -> str:
@@ -91,9 +93,9 @@ def clean_permalink(url: Optional[str]) -> Optional[str]:
     low = u.lower()
     if "/search/" in low:
         return None
-    if "/feed/" in low and "activity" not in low:
+    if "/feed/" in low and not _ACTIVITY_RE.search(u):
         return None
-    if "/posts/" in low or "activity" in low:
+    if "/posts/" in low or _ACTIVITY_RE.search(u):
         return u
     return None  # not a recognized post permalink → never store a wrong link
 

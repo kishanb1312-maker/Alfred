@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -87,6 +88,12 @@ def _derive_channel(job: Dict[str, Any]) -> str:
     return "portal"
 
 
+# Card 1 (job review) answers approve/skip. Card 2 (email preview) answers
+# send/cancel. Both ride the same '<decision>|<job_id>' payload, so one parser and
+# one poll loop serve both gates.
+_DECISIONS = ("approve", "skip", "send", "cancel")
+
+
 def make_callback_data(decision: str, job_id: str) -> str:
     """Inline-button payload: '<decision>|<job_id>'. (Telegram cap: 64 bytes.)"""
     return f"{decision}|{job_id}"
@@ -97,7 +104,7 @@ def parse_callback_data(data: str) -> Optional[Dict[str, str]]:
     if not data or "|" not in data:
         return None
     decision, job_id = data.split("|", 1)
-    if decision not in ("approve", "skip") or not job_id:
+    if decision not in _DECISIONS or not job_id:
         return None
     return {"decision": decision, "job_id": job_id}
 
@@ -254,6 +261,115 @@ def enqueue_approved(job_id: str) -> bool:
     return True
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _attachment_names(msg: Any) -> List[str]:
+    """Filenames actually attached to `msg`.
+
+    Read here rather than imported from email_send so this module keeps its single
+    dependency direction — email_send imports nothing from telegram_bot and vice
+    versa, and the preview works even when SMTP config is absent.
+    """
+    if msg is None:
+        return []
+    try:
+        return [part.get_filename() for part in msg.iter_attachments()
+                if part.get_filename()]
+    except Exception:
+        return []
+
+
+EMAIL_DECISIONS = os.path.join(_DATA, "email_decisions.json")
+
+
+def record_email_decision(job_id: str, decision: str) -> bool:
+    """Record the second gate's answer for `job_id`. Idempotent → False if already set.
+
+    `decision` is "cleared" (the user tapped Send) or "cancelled" (tapped Cancel).
+    The first answer wins: a job whose email was cancelled cannot be un-cancelled by a
+    later stray tap on the same card.
+    """
+    if decision not in ("cleared", "cancelled"):
+        raise ValueError(f"decision must be cleared|cancelled, got {decision!r}")
+    os.makedirs(_DATA, exist_ok=True)
+    try:
+        with open(EMAIL_DECISIONS, "r", encoding="utf-8") as fh:
+            store = json.load(fh)
+    except (FileNotFoundError, json.JSONDecodeError):
+        store = {}
+    if not isinstance(store, dict):
+        store = {}
+    if job_id in store:
+        return False
+    store[job_id] = {"decision": decision, "ts": _now_iso()}
+    with open(EMAIL_DECISIONS, "w", encoding="utf-8") as fh:
+        json.dump(store, fh, indent=2, sort_keys=True)
+    return True
+
+
+def email_decision(job_id: str) -> Optional[str]:
+    """"cleared" | "cancelled" | None (no answer yet — the email must NOT be sent)."""
+    try:
+        with open(EMAIL_DECISIONS, "r", encoding="utf-8") as fh:
+            store = json.load(fh)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+    rec = store.get(job_id) if isinstance(store, dict) else None
+    return rec.get("decision") if isinstance(rec, dict) else None
+
+
+def build_email_keyboard(job_id: str) -> Dict[str, Any]:
+    """The [📧 Send] [🚫 Cancel] keyboard for the email-preview card."""
+    return {
+        "inline_keyboard": [[
+            {"text": "📧 Send", "callback_data": make_callback_data("send", job_id)},
+            {"text": "🚫 Cancel", "callback_data": make_callback_data("cancel", job_id)},
+        ]]
+    }
+
+
+def build_email_preview_text(job: Dict[str, Any], msg: Any,
+                             body_limit: int = 1200) -> str:
+    """Render the exact email that would go out, for the second Telegram gate.
+
+    Shows From, To, Subject, the body, and the real attachment filenames taken from
+    the built message — not from what the caller intended to attach, so a PDF that
+    silently failed to build is visible here rather than discovered by the recipient.
+    """
+    body = ""
+    if msg is not None:
+        try:
+            part = msg.get_body(preferencelist=("plain",))
+            body = part.get_content() if part is not None else ""
+        except Exception:
+            body = ""
+    body = (body or "").strip()
+    if len(body) > body_limit:
+        body = body[:body_limit].rstrip() + "\n\n… (truncated for this preview)"
+
+    names = _attachment_names(msg)
+    attach_line = ", ".join(n for n in names if n) or "⚠️ none — nothing will be attached"
+
+    company = job.get("company") or "unknown company"
+    title = job.get("title") or "unknown role"
+    return (
+        f"📧 READY TO SEND — {company}\n"
+        f"{title}\n"
+        f"{'─' * 28}\n"
+        f"From:    {msg['From'] if msg is not None else '?'}\n"
+        f"To:      {msg['To'] if msg is not None else '?'}\n"
+        f"Subject: {msg['Subject'] if msg is not None else '?'}\n"
+        f"Files:   {attach_line}\n"
+        f"{'─' * 28}\n"
+        f"{body}\n"
+        f"{'─' * 28}\n"
+        f"Tap Send to email this to the company, or Cancel to skip the email.\n"
+        f"Cancel does NOT cancel the portal application."
+    )
+
+
 # ---------------------------------------------------------------------------
 # NETWORK: send + poll + ack (all route through _api)
 # ---------------------------------------------------------------------------
@@ -280,6 +396,21 @@ def send_review_card(job: Dict[str, Any], resume_pdf: Optional[str],
                  data={"chat_id": _chat_id(), "caption": f"{label} — {job.get('company', '')}"},
                  files={"document": (os.path.basename(path), fh)})
     return message_id
+
+
+def send_email_preview_card(job: Dict[str, Any], msg: Any) -> int:
+    """Second gate: show the exact email and ask Send/Cancel. Returns the message_id.
+
+    Sending this card does NOT send the email. Nothing reaches the company until the
+    user taps Send and `email_decision(job_id)` reads back "cleared".
+    """
+    resp = _api("sendMessage", data={
+        "chat_id": _chat_id(),
+        "text": build_email_preview_text(job, msg),
+        "reply_markup": json.dumps(build_email_keyboard(job.get("job_id", ""))),
+        "disable_web_page_preview": True,
+    })
+    return resp["result"]["message_id"]
 
 
 def poll_responses(offset: Optional[int] = None) -> Tuple[List[Dict[str, Any]], int]:

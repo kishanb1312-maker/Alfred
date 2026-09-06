@@ -1,0 +1,50 @@
+# ── Screening KB + contact profile (Kishan Bhalani) ──────────────────
+personal:
+  full_name: "Kishan Bhalani"
+  email: "kishanbhalani1213@gmail.com"
+  phone: "+91 9898239789"
+  location: "Ahmedabad, India"
+  linkedin_url: "https://www.linkedin.com/in/kishanbhalani13"
+  portfolio_url: "https://kishan.design"
+  github_url: "https://github.com/kishanposimyth-spec"
+
+work_authorization: "Indian citizen — no visa sponsorship required"
+notice_period: "30 days"
+availability: "Available in 30 days"
+
+salary_expectation: "₹7.8 LPA (₹65,000/month)"
+willing_to_relocate: true
+remote_preference: "Open to onsite, remote, or hybrid"
+
+# Total experience: 4+ years (Product / UI-UX design), from the resume.
+# Per-skill years are reasonable estimates from the resume — adjust any that are off.
+years_experience:
+  figma: 4
+  "product design": 4
+  "ui design": 4
+  "ux design": 4
+  prototyping: 4
+  "design systems": 4
+  "component libraries": 4
+  wireframing: 4
+  "user research": 4
+  "usability testing": 4
+  "interaction design": 4
+  "visual design": 4
+  "design thinking": 4
+  "information architecture": 4
+  "developer handoff": 4
+
+screening_answers:
+  - question: "Are you authorized to work in India?"
+    answer: "Yes, I am an Indian citizen."
+  - question: "Do you require visa sponsorship?"
+    answer: "No."
+  - question: "What are your salary expectations?"
+    answer: "Around ₹7.8 LPA (₹65,000/month), negotiable based on role."
+  - question: "What is your notice period?"
+    answer: "30 days."
+  - question: "Are you willing to relocate?"
+    answer: "Yes — open to Ahmedabad, Pune, or Bangalore, and remote."
+  - question: "How many years of experience do you have?"
+    answer: "4+ years in product and UI/UX design."

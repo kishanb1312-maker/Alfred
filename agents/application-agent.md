@@ -54,6 +54,22 @@ that can't send (cap/pause) doesn't block the portal application.
   (`data/email_paused.flag`). `scripts/email_send.py :: send()` refuses (`status: "EMAIL_PAUSED"`)
   while the email channel is throttled.
 
+## The email channel is gated on the Send tap
+
+Approval of the job is **not** approval of the email. Before sending anything, call
+`scripts/telegram_bot.py :: email_decision(job_id)`:
+
+- `"cleared"` — the user tapped **Send** on the email-preview card. Send it.
+- `"cancelled"` — the user tapped **Cancel**. **Do not email.** Still run the portal
+  channel; the two are independent.
+- `None` — no answer yet. **Do not email.** This is not an error and not something to work
+  around: the user has not seen the preview, or has not decided. Note it and move on. The
+  job stays eligible on a later run once the tap arrives.
+
+Never send an email whose decision is not `"cleared"`, and never treat a missing decision as
+consent. `dry_run` still applies on top of this: cleared plus `dry_run: true` means log what
+would be sent, not send it.
+
 ## B. Portal
 - **LinkedIn Easy Apply** (the host's signed-in browser — whichever the session provides; see the
   "Browser capability" section of `agents/job-finder.md`. No browser → leave the job queued and say
