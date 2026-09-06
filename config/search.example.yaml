@@ -34,6 +34,12 @@ search_order:
 
 # Specific company job boards to watch (Greenhouse / Lever). Empty by default —
 # add companies you'd love to work at. `token` is the company slug in the board URL.
+# Maximum age of a listing, in days. HARD filter applied to every source, browser and
+# API alike: anything older is dropped before de-duping. Sources whose UI has a date
+# filter are also narrowed to this window at the source. Keep it small (2-3) to see
+# only genuinely new postings; raise it if a run comes back too thin.
+max_age_days: 3
+
 company_boards: []
   # - { provider: greenhouse, token: "airbnb",  name: "Airbnb" }
   # - { provider: lever,      token: "netflix", name: "Netflix" }
