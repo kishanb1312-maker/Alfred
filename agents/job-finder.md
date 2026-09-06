@@ -53,9 +53,16 @@ not look for a specific vendor's tool. At the start of a run, check what this se
 and take the **first** option that works:
 
 1. **The host application's own browser.** Whatever the harness you are running inside provides
-   natively — Claude Code's built-in browser, ChatGPT Codex's in-app browser, or any equivalent.
-   Prefer this: it needs no extra install, and it is the most likely to reuse a session the user is
-   already signed into.
+   natively — Claude Code's built-in browser pane, ChatGPT Codex's in-app browser, or any equivalent.
+
+   **How to identify it — do not guess from the tool's name.** The host browser is the one already
+   present in your tool list at the start of the run, with no load or install step. It exposes a
+   generic navigate + read-page pair (names like `navigate`, `read_page`, `get_page_text`,
+   `computer`). A tool whose name advertises a *specific* desktop browser it remote-controls
+   ("chrome", "brave", "safari", "control X") is **not** the host browser — it is option 3, and
+   depends on that application being open and granting automation permission. Do not reach for one
+   of those while a host browser is available, and do not go looking for a browser by searching your
+   tool catalogue for the word "chrome".
 2. **Playwright MCP**, if present. Point it at the user's existing browser profile (a persistent
    context, or an attach-over-CDP connection to a running browser) rather than letting it spawn a
    clean one — see the authentication note below.
@@ -80,7 +87,8 @@ on a fiction.
 ## Combining + de-duping
 
 Each run: gather the **Python-source** jobs (one call to `source_dispatch.dispatch`) AND the
-**browser-source** jobs (drive Chrome per browser source), then run **ONE** order-preserving de-dupe
+**browser-source** jobs (drive the browser you selected in **Browser capability** — whichever
+that turned out to be — per browser source), then run **ONE** order-preserving de-dupe
 (`scripts/applied_history.py :: dedupe`) over the **combined** list in `search_order` — the source
 appearing **first in `search_order` wins** a duplicate. Do not de-dupe the two sets separately.
 

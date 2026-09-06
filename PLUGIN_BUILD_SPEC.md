@@ -184,8 +184,9 @@ The CLI must run from the plugin dir via `${CLAUDE_PLUGIN_ROOT}` and be callable
    secret values into the chat.
 6. **Telegram chat id** — after the token is set, tell them to message their bot once, then run
    `alfred detect-telegram-chat-id`.
-7. **Notion + browser (MCP)** — instruct the user to connect the **Notion** connector and use their
-   logged-in **Chrome (Claude-in-Chrome)**; these are authorized in Claude Code, not via `.env`.
+7. **Notion + browser** — instruct the user to connect the **Notion** connector. For browsing, the
+   agents discover a capability at run time (host browser → Playwright MCP → other browser MCP →
+   skip); nothing browser-specific is declared here, and none of it is authorized via `.env`.
 8. **Verify** — run `alfred doctor`; loop until green. Remind them `dry_run` stays ON for the first pass.
 
 The wizard writes non-secret files directly; secrets are always user-run CLI calls.
@@ -248,7 +249,7 @@ There are **two channels**:
 | Service | What the user does |
 |---|---|
 | **Notion** | Connect the Notion connector in Claude Code (`/mcp` or connector settings). OAuth is per-user; the plugin only *declares* it as needed. The tracker agent then uses the `notion-*` MCP tools. |
-| **LinkedIn / browser** | Just stay logged in to LinkedIn in their real Chrome. The Claude-in-Chrome MCP drives it; **no LinkedIn password is ever stored.** |
+| **LinkedIn / browser** | Stay logged in to LinkedIn in whatever browser the run will drive. Agents pick a browser by capability, never by vendor; **no LinkedIn password is ever stored.** If the selected browser does not carry the session, the source is skipped with a note. |
 
 > Optionally add a `.mcp.json` to the plugin that lists Notion (and browser, if applicable) as
 > recommended MCP servers so `/plugin install` can prompt the user to connect them. Verify the current
