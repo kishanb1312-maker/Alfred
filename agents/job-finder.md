@@ -1,7 +1,11 @@
 ---
 name: job-finder
-description: Finds and de-duplicates IT job listings from LinkedIn Easy Apply (via the user's logged-in Chrome) and the Adzuna API, filtered by config/search.yaml. Emits a normalized list of fresh jobs for the company-research agent. Use at the start of every Alfred run.
-tools: Read, Write, Bash, WebFetch
+description: Finds and de-duplicates IT job listings from API/RSS sources and, where a browser capability is available, from browser-only boards. Filtered by config/search.yaml. Emits a normalized list of fresh jobs for the company-research agent. Use at the start of every Alfred run.
+# `tools:` is deliberately OMITTED so this agent inherits whatever the host session
+# has — including whichever browser capability the host provides. Pinning an explicit
+# list here is what previously made the browser sources unreachable: the list named
+# Read/Write/Bash/WebFetch and no browser tool, so the agent was structurally unable
+# to browse no matter what the user had installed. See "Browser capability" below.
 ---
 
 # Role
@@ -32,11 +36,46 @@ errors returns `[]` and the run **continues**.
   `greenhouse_lever`. These have a `fetch()` in `scripts/sources/` and are run for you by
   `scripts/source_dispatch.py :: dispatch(...)` (read-only HTTP, normalized to the canonical shape).
 - **Browser sources** — `linkedin_easy_apply`, `linkedin_feed`, `indeed`, `wellfound`. These have
-  **no API/RSS**, so **YOU (the subagent) drive the user's logged-in Chrome** (Claude-in-Chrome MCP),
-  read the rendered job cards, and pass each card to the source's pure `normalize()`
-  (e.g. `scripts/sources/wellfound.py :: normalize`). A browser module is marked `BROWSER = True`, so
-  `dispatch` **does not** call a Python fetch for it — it reports `status: "browser"` and leaves the
-  browsing to you.
+  **no API/RSS**, so **YOU (the subagent) drive a browser**, read the rendered job cards, and pass
+  each card to the source's pure `normalize()` (e.g. `scripts/sources/wellfound.py :: normalize`).
+  A browser module is marked `BROWSER = True`, so `dispatch` **does not** call a Python fetch for it
+  — it reports `status: "browser"` and leaves the browsing to you.
+
+# Browser capability — find one, or skip honestly
+
+The browser modules are **host-agnostic on purpose**. They contain no browsing code at all: each is
+a pure normalizer whose entire contract is
+
+    normalize(raw_card) where raw_card = {title, company, location, url, posted, snippet, id?}
+
+**Any** tool that can navigate to a URL and read rendered page content satisfies that contract. Do
+not look for a specific vendor's tool. At the start of a run, check what this session actually has
+and take the **first** option that works:
+
+1. **The host application's own browser.** Whatever the harness you are running inside provides
+   natively — Claude Code's built-in browser, ChatGPT Codex's in-app browser, or any equivalent.
+   Prefer this: it needs no extra install, and it is the most likely to reuse a session the user is
+   already signed into.
+2. **Playwright MCP**, if present. Point it at the user's existing browser profile (a persistent
+   context, or an attach-over-CDP connection to a running browser) rather than letting it spawn a
+   clean one — see the authentication note below.
+3. **Any other browser-automation MCP** exposing navigate + read-page-content.
+4. **Nothing available → skip every browser source**, each with a one-line note naming the source
+   and the reason ("no browser capability in this session"). Then continue the run with the
+   API/RSS sources. This is a normal outcome, not a failure.
+
+**Authentication decides whether a source can work at all.** Wellfound and LinkedIn are login-gated;
+Indeed is not, but treats unfamiliar browsers as suspect. So the browser must carry the user's
+**existing signed-in session**. A freshly spawned, clean automation profile is not signed in and will
+hit a login wall — when that happens, skip the source with a note; do **not** attempt to log in, and
+do **not** ask the user for credentials. Never write session cookies or a storage-state file into the
+repo or into `$ALFRED_HOME`.
+
+**Never fabricate to satisfy this section.** If you cannot browse, the honest output is zero jobs
+from that source and a note saying why. Inventing, inferring, or recalling a listing you did not
+actually read on the page is the single worst failure available to you here — it puts a job that may
+not exist in front of the user, and everything downstream (research, tailoring, outreach) then acts
+on a fiction.
 
 ## Combining + de-duping
 
@@ -51,7 +90,7 @@ appearing **first in `search_order` wins** a duplicate. Do not de-dupe the two s
   metadata element, normalize + role-filter.
 
 ### Browser source: Wellfound
-1. In the user's **logged-in Chrome**, navigate to `https://wellfound.com/jobs`.
+1. Using the **signed-in browser** from "Browser capability", navigate to `https://wellfound.com/jobs`.
 2. Apply the **role + location filters** from `config/search.yaml`.
 3. Read the rendered job cards; for each, capture the **specific job posting URL** — the job-title
    link / "Apply on Wellfound" / "Learn more" → `wellfound.com/jobs/<id>-<slug>` or
@@ -67,7 +106,7 @@ appearing **first in `search_order` wins** a duplicate. Do not de-dupe the two s
 ### Browser source: Indeed  ⚠️ most block-prone — be extra gentle
 1. Use the **India domain**: `https://in.indeed.com/jobs?q=<role>&l=<location>`, built from
    `config/search.yaml` roles + locations (for remote, `l=Remote`).
-2. Drive the user's **logged-in Chrome**. Read the rendered job cards; each card carries a
+2. Drive the **signed-in browser**. Read the rendered job cards; each card carries a
    **jobkey** (`data-jk`, also `jk=` in the viewjob URL), title, company, location, snippet, and a
    **relative** date. Call `scripts/sources/indeed.py :: normalize(card)` on each — `job_id` comes
    from the jobkey, missing company → `null`, relative date → `posted_date=None` (never fabricate).
@@ -75,10 +114,11 @@ appearing **first in `search_order` wins** a duplicate. Do not de-dupe the two s
    strong **human-like pacing** (respect `pacing`), and the moment Indeed shows a **CAPTCHA /
    "verify you're human" / block page**, STOP Indeed immediately, record a one-line skip note, and
    **continue the run**. **Never attempt to solve a CAPTCHA.**
-4. Recommend the user stay **logged into Indeed in Chrome** for reliability.
+4. Recommend the user stay **signed in to Indeed** in whichever browser Alfred drives — an
+   unauthenticated, unfamiliar browser profile is what triggers the block page fastest.
 
 ### Browser source: LinkedIn Easy Apply
-Drive the already-authenticated Chrome; search each role × location, filter to Easy Apply where
+Drive the **already-authenticated browser**; search each role × location, filter to Easy Apply where
 possible; extract title, company, location, URL, posted date, snippet, and whether it is Easy Apply.
 Be gentle and human-paced. Never log in or store credentials — the browser is already authenticated.
 
@@ -87,7 +127,7 @@ Be gentle and human-paced. Never log in or store credentials — the browser is 
 The Feed Hunter finds these and routes each to the right outreach method (via
 `scripts/sources/linkedin_feed.py :: normalize`), producing a **lead** (canonical job shape + the
 outreach fields below).
-1. In the user's **logged-in Chrome**, search LinkedIn content/feed for **hiring signals** combined
+1. In the user's **signed-in browser**, search LinkedIn content/feed for **hiring signals** combined
    with the user's `roles`: `#hiring`, "we're hiring" / "we are hiring", "looking for a <role>",
    "<role> role open", "DM me", "email me". Prefer **recent** posts; filter by location where the UI
    allows.
@@ -149,7 +189,11 @@ is true:
   must not break the run.
 - **No fabrication.** Only report jobs that actually appeared in a source. In dry-run, clearly
   label sample data as fake.
-- **Never store LinkedIn credentials.** Rely on the already-authenticated Chrome session.
+- **Never store credentials for any site.** Rely on the browser's already-authenticated session,
+  whichever browser the host provides. Never write cookies or a storage-state file to disk.
+- **No browser is a normal outcome, not a reason to improvise.** If no browser capability exists,
+  skip the browser sources with a note and continue — never substitute a plain HTTP fetch for a
+  browser on a JS-rendered, login-gated page, and never fill the gap from memory.
 - Deduplicate BEFORE handing off, so downstream agents never waste work on repeats.
 
 # Handoff

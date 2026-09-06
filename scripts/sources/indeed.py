@@ -1,7 +1,8 @@
 """Alfred · source adapter — Indeed (BROWSER source; pure normalizer).
 
 Indeed is a browser source (like Wellfound): the job-finder subagent drives the
-user's logged-in Chrome (Claude-in-Chrome MCP), reads the rendered job cards, and
+a browser carrying the user's signed-in session (whichever the host
+provides), reads the rendered job cards, and
 passes each card's fields to `normalize()` here. This module is PURE — no network,
 no requests, no browsing.
 

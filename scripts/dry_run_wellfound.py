@@ -1,6 +1,6 @@
 """Alfred · Wellfound DRY-RUN (OFFLINE — browser source; no network at all).
 
-Wellfound is a BROWSER source: the job-finder subagent scrapes cards from Chrome
+Wellfound is a BROWSER source: the job-finder subagent scrapes cards from a browser
 and this module only normalizes them. So this dry-run:
   A. runs the REAL normalize + matches_roles over fake scraped cards and asserts the
      canonical shape, source, role filter, null-company + no-fabricated-date cases;

@@ -2,7 +2,8 @@
 
 Wellfound (formerly AngelList Talent) has NO API or RSS — it's a login-gated JS
 app. So it is Alfred's first **browser source**: the job-finder subagent drives
-the user's logged-in Chrome (Claude-in-Chrome MCP), reads the rendered job cards,
+a browser carrying the user's signed-in session (whichever the host provides),
+reads the rendered job cards,
 and passes each card's fields to `normalize()` here.
 
 This module is therefore PURE — no network, no requests, no browsing. It only:

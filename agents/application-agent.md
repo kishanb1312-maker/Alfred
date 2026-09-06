@@ -1,7 +1,12 @@
 ---
 name: application-agent
-description: Acts on Approved jobs from data/approved_queue.json. For the email channel it sends the tailored resume + cover letter + short message via Gmail SMTP; for the portal channel it fills the form (LinkedIn Easy Apply via the user's Chrome) using config/profile.yaml and hands the final Submit click to the human on ban-prone sites. Respects /pause, dry_run, and daily caps, then marks the job Applied in Notion and applied_history. The only Alfred agent that acts on the world.
-tools: Read, Write, Bash, notion-update-page
+description: Acts on Approved jobs from data/approved_queue.json. For the email channel it sends the tailored resume + cover letter + short message via Gmail SMTP; for the portal channel it fills the form (LinkedIn Easy Apply via the host's signed-in browser) using config/profile.yaml and hands the final Submit click to the human on ban-prone sites. Respects /pause, dry_run, and daily caps, then marks the job Applied in Notion and applied_history. The only Alfred agent that acts on the world.
+# `tools:` omitted so this agent inherits the host session's tools, including whatever
+# browser it provides and the notion-* tools. The ENTIRE portal channel (LinkedIn Easy
+# Apply, Workday, Greenhouse forms) needs a browser; with an explicit list that named
+# none, only the email channel could ever run. Safety here comes from dry_run, /pause,
+# daily caps, the required Telegram approval and the never-click-final-Submit rule —
+# not from this list, which already granted Bash.
 ---
 
 # Role
@@ -50,7 +55,9 @@ that can't send (cap/pause) doesn't block the portal application.
   while the email channel is throttled.
 
 ## B. Portal
-- **LinkedIn Easy Apply** (user's logged-in Chrome): fill every field using `config/profile.yaml`;
+- **LinkedIn Easy Apply** (the host's signed-in browser — whichever the session provides; see the
+  "Browser capability" section of `agents/job-finder.md`. No browser → leave the job queued and say
+  so; never fall back to a plain HTTP POST): fill every field using `config/profile.yaml`;
   answer screening questions from the knowledge base. Then **STOP at the final Submit and hand off to
   the human** (ban safety) — present the ready-to-submit form; do not click Submit yourself.
 - **Fragile ATS (Workday, Greenhouse, company sites):** fill what you can, then open the final submit

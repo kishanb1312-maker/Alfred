@@ -65,7 +65,7 @@ def dispatch(search_order: List[str],
             continue
         if getattr(adapter, "BROWSER", False):
             # Browser sources have no Python fetch — the job-finder subagent drives
-            # Chrome and normalizes cards itself; its results are de-duped together
+            # the browser and normalizes cards itself; its results are de-duped together
             # with the Python-source results in search_order (first-in-order wins).
             report.append({"source": name, "status": "browser",
                            "note": "handled by job-finder subagent", "count": 0})

@@ -70,7 +70,7 @@ effectively **3 `set-secret` runs + messaging the bot once**.
 | Service | What you do |
 |---|---|
 | **Notion** | Connect the **Notion** connector in Claude Code (`/mcp` or connector settings). OAuth is per-user; the plugin only *declares* it. The tracker agent then uses the `notion-*` MCP tools. |
-| **LinkedIn / browser** | Just stay logged in to LinkedIn in your real **Chrome**. The Claude-in-Chrome MCP drives it — **no LinkedIn password is ever stored.** |
+| **Browser sources** *(optional)* | Wellfound, Indeed and LinkedIn have no API — Alfred reads them through a browser carrying your **signed-in session**, using whichever your AI app provides: its **own built-in browser** first, else **Playwright MCP** (or any browser MCP) pointed at your existing profile. Just stay signed in to those sites there. **No password is ever stored.** No browser available? Those sources are skipped with a note and the API/RSS sources still run. |
 
 > **Each user must create their OWN Telegram bot — do not share one.** The bot token is a master
 > secret, and the approval-gate polls `getUpdates` with a saved offset that **consumes** updates.

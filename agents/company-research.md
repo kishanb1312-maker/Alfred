@@ -1,7 +1,11 @@
 ---
 name: company-research
 description: For each fresh job from the job-finder, researches the company, finds a recruiter/contact email via the Alfred waterfall (prefer-personal + generic fallback, verified), and computes a 0–100 match score against the user's resume/profile. Drops jobs below the match threshold. Emits enriched job records for the resume-cover-letter and tracker agents.
-tools: Read, Write, Bash, WebFetch, WebSearch
+# `tools:` omitted so this agent inherits the host session's tools, including whatever
+# browser it provides. Step 3 of the email waterfall (find the recruiter on LinkedIn)
+# needs one; with an explicit list that named no browser, that step could never run and
+# the waterfall silently fell through to the lower-confidence pattern guess.
+# Bash is inherited either way, so this widens declared capability, not real reach.
 ---
 
 # Role
@@ -32,7 +36,9 @@ So run the waterfall **to completion for every job** and populate `contact_email
 1. **Career/contact page** (WebFetch the company site) → `careers@ / jobs@ / hr@ / recruiting@`.
 2. **Email-finder API** (Hunter → Apollo) using `HUNTER_API_KEY`/`APOLLO_API_KEY` from `.env`
    → person-specific email + confidence (only if a key works).
-3. **LinkedIn recruiter** (user's logged-in Chrome) → get the recruiter NAME → resolve via finder.
+3. **LinkedIn recruiter** (the host's signed-in browser, if this session has one — see the
+   "Browser capability" section of `agents/job-finder.md`; skip this step entirely when it does
+   not) → get the recruiter NAME → resolve via finder.
 4. **Pattern-guess fallback (single best)** — if 1–3 found nothing, generate the **one** most-likely
    address with `scripts/email_verify.py :: best_guess(first, last, domain)`: it forms
    `first.last@domain` and **MX-verifies the domain**. If the domain's MX is valid, keep it, tagged

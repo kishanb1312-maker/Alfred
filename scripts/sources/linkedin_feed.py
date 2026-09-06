@@ -2,12 +2,13 @@
 
 Alfred's signature feature. LinkedIn "we're hiring" posts don't go through job
 portals — the poster wants a DM, a comment, or an email. So the job-finder subagent
-scans the LinkedIn feed (in the user's logged-in Chrome), reads each hiring post, and
+scans the LinkedIn feed (in a browser carrying the user's signed-in session), reads
+each hiring post, and
 passes it to `normalize()` here, which produces a **lead**: the canonical job shape
 PLUS outreach fields so the application-agent knows HOW to reach out.
 
 This module is PURE — no network, no requests, no browsing. It is a browser source
-(BROWSER=True), so source_dispatch skips it; the subagent drives Chrome.
+(BROWSER=True), so source_dispatch skips it; the subagent drives the browser.
 
 Lead shape = canonical job shape + :
     outreach_method   "email" | "dm" | "comment" | "link"

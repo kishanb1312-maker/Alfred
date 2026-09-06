@@ -1,6 +1,6 @@
 """Alfred · Indeed DRY-RUN (OFFLINE — browser source; no network at all).
 
-Indeed is a BROWSER source: the job-finder subagent scrapes cards from Chrome and
+Indeed is a BROWSER source: the job-finder subagent scrapes cards from a browser and
 this module only normalizes them. This dry-run:
   A. runs the REAL normalize + matches_roles over fake scraped cards and asserts the
      canonical shape, source, role filter, jobkey extraction (explicit + from URL),

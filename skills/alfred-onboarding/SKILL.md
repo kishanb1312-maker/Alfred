@@ -116,8 +116,12 @@ writes `TELEGRAM_CHAT_ID`. If it reports no message yet, have them message the b
 These are authorized **in Claude Code**, not via secrets:
 - **Notion:** connect the **Notion** connector (`/mcp` or connector settings). The tracker agent uses the
   `notion-*` MCP tools; OAuth is per-user.
-- **LinkedIn / browser:** just stay logged in to LinkedIn in their real **Chrome** — the Claude-in-Chrome
-  MCP drives it. **No LinkedIn password is ever stored.**
+- **LinkedIn / browser:** browser sources (Wellfound, Indeed, LinkedIn) need a browser that carries the
+  user's **signed-in session**. Alfred uses whichever the host provides — the app's own built-in browser
+  first, else Playwright MCP or another browser MCP pointed at their existing profile. Tell them to stay
+  signed in to those sites in that browser. **No password is ever stored.** If the session has no browser
+  at all, those sources are skipped with a note and the API/RSS sources still run — that is a supported
+  setup, not a broken one.
 
 ## Step 8 — Verify
 Run `alfred doctor` and show the checklist. Resolve any ❌ (required) items and re-run until it reports
