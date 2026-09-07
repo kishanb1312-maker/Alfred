@@ -108,7 +108,7 @@ the two `.claude/agents/` refs in code (`orchestrate.py:11`, `indeed.py:9`) are 
 ## Step 6 — MCP declaration (optional)  ✅ DONE & APPROVED
 - [x] Added `.mcp.json` at plugin root: single `notion` server (`type: http`, `url: https://mcp.notion.com/mcp`).
 - [x] Schema verified against live MCP docs first (remote server needs `type`+`url`; `url` without `type` is an error).
-- [x] Browser omitted (Claude-in-Chrome is built-in, not a declarable server). `plugin.json` untouched (auto-discovered).
+- [x] Browser omitted from `plugin.json` on purpose: agents discover a browser by capability at run time (host browser → Playwright MCP → other browser MCP → honest skip), so there is nothing vendor-specific to declare.
 
 **Architect verification:** valid JSON; only the Notion connector; **zero credential fields** (no token/key/secret/
 password/bearer/authorization) — OAuth stays per-user via `/mcp`. Passes `--strict`; install showed `MCP servers (1): notion`. **Correct.**
