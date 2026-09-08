@@ -584,18 +584,29 @@ def resolve_output_dir(job: Dict[str, Any]) -> Optional[str]:
 
 
 def draft_attachments(job: Dict[str, Any], output_dir: Optional[str] = None) -> List[str]:
-    """Existing PDFs to attach: the job's declared files, else the output dir's PDFs."""
-    files = job.get("files") or {}
-    found = [p for p in (files.get("resume"), files.get("cover_letter"))
-             if p and os.path.exists(p)]
-    if found:
-        return found
+    """Existing PDFs to attach: the job's declared files, else the output dir's PDFs.
+
+    The tailored record spells these resume_pdf / cover_letter; older records used
+    resume / cover_letter_pdf, so accept either. Two rules earn their keep here:
+    paths are resolved against the Alfred home rather than the cwd, and a PARTIAL
+    match falls through to the glob instead of being returned. Returning it is how
+    a draft ended up carrying the cover letter alone — files["cover_letter"] hit,
+    files["resume"] missed, and the resume was silently dropped from the email.
+    """
+    files = job.get("files") or job.get("artifacts") or {}
+    resume = files.get("resume_pdf") or files.get("resume")
+    cover = files.get("cover_letter") or files.get("cover_letter_pdf")
+    declared = [_resolved(p) for p in (resume, cover)
+                if p and os.path.exists(_resolved(p))]
+    if len(declared) == 2:
+        return declared
     out = output_dir or resolve_output_dir(job)
     if not out:
-        return []
+        return declared
+    globbed: List[str] = []
     for pattern in ("Resume_*.pdf", "CoverLetter_*.pdf"):
-        found.extend(sorted(glob.glob(os.path.join(out, pattern))))
-    return found
+        globbed.extend(sorted(glob.glob(os.path.join(out, pattern))))
+    return globbed or declared
 
 
 def stage_email_draft(job: Dict[str, Any], subject: Optional[str] = None,
