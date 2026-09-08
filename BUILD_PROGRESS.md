@@ -148,6 +148,43 @@ Everything sits **uncommitted** on branch `plugin-setup`, per the review-first r
 
 ---
 
+## Step 9 — fix: the email preview card never arrived after Approve  ✅
+
+**Symptom:** tap Approve on a job with a recruiter email → Notion flips to "Approved" correctly, then
+nothing. The second card (📧 Send / ✏️ Edit / 🚫 Cancel) never comes, so the email can never be sent.
+
+**Cause:** the second gate was prose executed mid-run ("a tap on Approve is followed immediately by a
+second card"), but a tap and the card that prompted it are almost never in the same run — the run
+sends the card and ends, the user taps later, a later run reconciles it from the saved offset. That
+reconcile path only updated Notion and enqueued. And even if it had wanted to send the preview, it
+could not: the email body, subject and attachment paths lived only in the turn that built them, so
+nothing was left on disk to build a preview from. Silent, and permanent.
+
+- [x] `stage_email_draft(job)` — writes to/subject/body/attachments + a job snapshot BEFORE the review
+      card goes out, read from `output/<company>_<role>/email_message.txt` and the built PDFs. Never
+      overwrites a draft the user already edited.
+- [x] `send_review_card` stages it automatically, so no agent has to remember; staging failures are
+      non-fatal.
+- [x] `record_job_decision` / `job_decision` — approve/skip recorded durably, because
+      `approved_queue.json` gets drained and cannot answer "was this approved?".
+- [x] `mark_preview_sent` inside `send_email_preview_card`, and `pending_email_previews()` — the
+      stall is now a list you can read instead of silence.
+- [x] **`scripts/approval_poll.py`** — the tap → next-card step in code, not instructions: approve →
+      enqueue + preview card, edit → prompt + capture + re-preview, send/cancel → recorded, plus a
+      `--sweep` that heals jobs already stuck and `--status` that names them. Prints JSON for Notion;
+      exits non-zero if any card failed.
+- [x] `poll_responses(timeout=…)` — real long-poll, so a tap made during a run is caught in that run.
+- [x] `scripts/dry_run_approval_poll.py` — 45 checks, incl. the cross-run regression itself. Telegram
+      and SMTP both patched to explode; neither fires.
+- [x] Docs updated: approval-gate, application-agent (never drop a queue entry while its email
+      decision is still `None`), RUNBOOK, DAILY_RUN, /alfred-approve. Plugin → 1.5.0.
+
+**Unchanged on purpose:** the poller never sends email and never touches Notion. The recruiter email
+still goes only through the application agent, gated on a `"cleared"` decision, `dry_run`, `/pause`
+and the daily caps.
+
+---
+
 ## Guardrails (unchanged, never violate)
 Truthful tailoring · format lock · mandatory "what I changed" note · Telegram approve before any send ·
 human final click on ban-prone portals · `dry_run` blocks real sends · `/pause` halts the application

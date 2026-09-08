@@ -41,13 +41,28 @@ Inline keyboard: **[ ✅ Approve ]  [ ⏭️ Skip ]**, callback data carrying th
 A single **Approve** → both the portal application AND (if an email was found) the cold email.
 **Skip** → neither.
 
-# Flow each run (via scripts/telegram_bot.py)
+# Flow each run (via scripts/approval_poll.py)
 
-1. **Reconcile first:** `poll_responses(offset)` — apply any taps/`/pause` that arrived since the
-   last run (update Notion, enqueue approved), advance the saved offset.
-2. **Send** a card for each new "Ready for Review" job.
-3. **Poll** for a bounded window to catch immediate taps; apply them.
+Taps are dispatched by **`scripts/approval_poll.py`**, not by hand. A tap and the card that
+prompted it are almost never in the same run — the run sends the card and ends, the user taps
+later, and a much later run reconciles it from the saved offset. Anything left to prose "do this
+right after the tap" therefore never happens on the path that matters. The script does the whole
+tap → next-card step in one process and prints a JSON summary; you turn that summary into Notion
+updates.
+
+1. **Reconcile first:** `python scripts/approval_poll.py` — polls from the saved offset, and for
+   every tap does its consequence: **approve** → record + enqueue + **send the email preview card**;
+   **skip** → record; **send/cancel** → record the email decision; **edit** → prompt, capture the
+   reply, re-preview. It then sweeps any approved job still missing its preview card. Apply the
+   returned `approved` / `skipped` lists to Notion.
+2. **Send** a card for each new "Ready for Review" job with `send_review_card(job, resume_pdf,
+   cover_pdf)` — which **stages the email draft first**, so the tap is answerable by any later run.
+3. **Poll** for a bounded window to catch immediate taps: `approval_poll.py --timeout 60`.
 4. Leave anything un-tapped as "Ready for Review" — it will be caught on a later run.
+
+Never end a run with `approval_poll.py --status` reporting a non-empty `pending_email_previews`:
+that list is exactly the failure this flow exists to prevent — a job the user approved, whose Notion
+row moved, and whose phone stayed quiet. Run `--sweep` and report what went out.
 
 # Decisions
 
@@ -63,26 +78,28 @@ Approve on the review card means "this job is worth pursuing". It does **not** m
 that email". A tap on Approve is followed immediately by a **second card** showing the exact
 message that would leave the user's mailbox:
 
-1. Build the message with `scripts/email_send.py :: build_message(to, subject, body,
-   attachments, from_addr)` from the tailored outreach email and the PDFs in
-   `output/<company>_<role>/`. **Build it — do not describe it.** The preview must be
-   rendered from the real `EmailMessage`, so the attachment list reflects what is genuinely
-   attached rather than what was intended.
-2. Send it with `scripts/telegram_bot.py :: send_email_preview_card(job, msg)`. The card
-   shows From, To, Subject, the body, and the real attachment filenames, with
-   **[📧 Send] [🚫 Cancel]**.
-3. **Save the draft** with `save_draft(job_id, to, subject, body, attachments)` before
-   sending the card. Edit needs something to edit; without a persisted draft the message
-   would exist only inside the turn that built it.
-4. Handle the tap:
+1. **Stage the draft before the review card, not after the tap.** `send_review_card` calls
+   `stage_email_draft(job)` for you: it reads `output/<company>_<role>/email_message.txt`
+   (a leading `Subject:` line becomes the subject) and the built PDFs, and writes them to
+   `email_drafts.json` with a small job snapshot. This is the load-bearing step — a draft
+   that exists only in the turn that built it cannot be previewed by the later run that
+   actually receives the tap. Verify with `approval_poll.py --status`; stage a job the
+   script could not resolve with `--stage <job.json>`.
+2. The message is then built with `scripts/email_send.py :: build_message(...)` from that
+   draft. **Built — never described.** The preview is rendered from the real `EmailMessage`,
+   so the attachment list reflects what is genuinely attached rather than what was intended.
+3. `approval_poll.py` sends it via `send_email_preview_card(job, msg)` the moment the approve
+   tap is read. The card shows From, To, Subject, the body, and the real attachment
+   filenames, with **[📧 Send] [✏️ Edit] [🚫 Cancel]**.
+4. The taps, all handled by the same script:
    - **Send** → `record_email_decision(job_id, "cleared")`.
    - **Cancel** → `record_email_decision(job_id, "cancelled")`.
-   - **Edit** → record **nothing**. Call `send_edit_prompt(job)`, which asks for the new
-     text and arms the capture. The next plain-text message from the user (event type
-     `text`, with `get_awaiting_edit()` naming the job) is the replacement: pass it to
-     `apply_edit(job_id, text)`, call `clear_awaiting_edit()`, rebuild the message from the
-     updated draft, and **send the preview card again**. The user can edit as many times as
-     they like; nothing is decided until they tap Send or Cancel.
+   - **Edit** → records **nothing**. `send_edit_prompt(job)` asks for the new text and arms
+     the capture. The next plain-text message from the user (event type `text`, with
+     `get_awaiting_edit()` naming the job) is the replacement: `apply_edit(job_id, text)`,
+     `clear_awaiting_edit()`, rebuild from the updated draft, and **send the preview card
+     again**. The user can edit as many times as they like; nothing is decided until they
+     tap Send or Cancel.
 
    First answer wins for Send/Cancel — a cancelled email cannot be un-cancelled by a stray
    later tap. Edit is deliberately outside that rule, because editing is not an answer.

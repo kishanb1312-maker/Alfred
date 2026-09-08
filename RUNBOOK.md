@@ -16,16 +16,20 @@ and whether **/pause** (`data/paused.flag`) is set. If paused, stop.
 ## The sequence
 
 0. **Preflight** — `scripts/orchestrate.py --preflight`. Abort on missing configs/resume or if paused.
-1. **Reconcile** — invoke **approval-gate** to poll Telegram for taps made since the last run;
-   apply Approvals (→ **application-agent**), record Skips. This clears the backlog first.
+1. **Reconcile** — invoke **approval-gate**, which runs `scripts/approval_poll.py` to poll Telegram
+   for taps made since the last run and act on each one: an Approve enqueues the job **and sends the
+   email preview card** (Send / Edit / Cancel), a Skip is recorded, a Send/Cancel answer is stored.
+   It also sweeps any approved job still missing its preview card. Notion is updated from the JSON
+   summary it prints. This clears the backlog first.
 2. **Find** — invoke **job-finder** → fresh, de-duped jobs (respects sources + caps).
 3. **Research** — invoke **company-research** per job → company analysis + verified email (waterfall)
    + match score. Drop jobs below `match_threshold`.
 4. **Tailor** — invoke **resume-cover-letter** per surviving job → tailored .docx/.pdf + cover letter
    + email text + `what_i_changed.md`. Merge into the canonical job object (below).
 5. **Track** — invoke **tracker** → create/​update a Notion row per job at Status "Ready for Review".
-6. **Approve** — invoke **approval-gate** → send a Telegram card per job; poll briefly for immediate
-   taps. Un-tapped jobs wait for a later run.
+6. **Approve** — invoke **approval-gate** → send a Telegram card per job (which stages each job's
+   email draft to disk, so a tap arriving days later is still answerable); poll briefly for immediate
+   taps with `approval_poll.py --timeout 60`. Un-tapped jobs wait for a later run.
 7. **Apply** — invoke **application-agent** → process `data/approved_queue.json` (respecting /pause,
    dry_run, daily caps): send verified emails; fill portal forms and hand the final Submit to you on
    LinkedIn/Workday. Mark Applied in Notion + `applied_history`.

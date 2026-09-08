@@ -66,6 +66,12 @@ Approval of the job is **not** approval of the email. Before sending anything, c
   around: the user has not seen the preview, or has not decided. Note it and move on. The
   job stays eligible on a later run once the tap arrives.
 
+  But check *why* it is `None` before moving on. If the user approved the job and no preview
+  card was ever sent, they have nothing to answer, and "waiting for a decision" is really a
+  job stuck forever. `scripts/approval_poll.py --status` names those jobs under
+  `pending_email_previews`; `--sweep` sends the missing cards. Never report a job as awaiting
+  a decision it was never actually asked for.
+
 **Send the edited draft, not the original.** Build the outgoing message from
 `load_draft(job_id)` — the user may have tapped Edit and rewritten the body or subject, and
 that draft is the version they approved. Rebuilding from the original tailored email would
@@ -119,7 +125,10 @@ storm of dead guesses.
 - Set Notion **`Channel`** to include `portal` and (if emailed) `email`; tick **`Cold Emailed`** when
   an email was sent; tick **`Bounced`** if it bounced.
 - `scripts/applied_history.py : mark_applied(job_id)`.
-- Remove the Job ID from `data/approved_queue.json`.
+- Remove the Job ID from `data/approved_queue.json` — but **only once both channels are
+  settled**: the portal action is done AND the email is sent, cancelled, or absent. Dropping a
+  job while `email_decision(job_id)` is still `None` orphans its email; the portal application
+  succeeding is not the user answering the email preview.
 - `scripts/daily_caps.py : record(kind)` (record `apply` and, separately, `email`).
 - (For email) note it in Notion so a follow-up can be scheduled later.
 

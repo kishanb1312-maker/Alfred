@@ -5,6 +5,14 @@ and polls getUpdates to collect the user's taps and /pause. Designed so a tap ca
 arrive hours later: the update `offset` is persisted, so a late tap is picked up
 on the next run.
 
+Because the tap and the card are rarely in the same process, everything the SECOND
+gate needs — the email body, subject, attachment paths, and enough of the job to
+render a card header — is staged to disk by `stage_email_draft` before the review
+card goes out, and the approve/skip answer itself is recorded durably in
+`job_decisions.json`. `pending_email_previews()` then names any approved job whose
+email preview card is still missing, so a stall is visible and recoverable instead
+of silent. `scripts/approval_poll.py` is the runner that acts on all of it.
+
 Secrets come ONLY from the environment:
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID   (never hardcoded, never logged)
 
@@ -18,6 +26,7 @@ Dependency: requests (already in requirements.txt). Everything else is stdlib.
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 from datetime import datetime, timezone
@@ -309,21 +318,46 @@ def _write_json(path: str, value: Any) -> None:
         json.dump(value, fh, indent=2, sort_keys=True)
 
 
+_JOB_SNAPSHOT_KEYS = ("job_id", "company", "title", "location", "url", "notion_url")
+
+
+def _job_snapshot(job: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The few job fields the preview card renders — small enough to store per draft."""
+    if not isinstance(job, dict):
+        return None
+    return {k: job.get(k) for k in _JOB_SNAPSHOT_KEYS if job.get(k) is not None}
+
+
 def save_draft(job_id: str, to: str, subject: str, body: str,
-               attachments: Optional[List[str]] = None) -> Dict[str, Any]:
+               attachments: Optional[List[str]] = None,
+               job: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Persist the email for `job_id` so Edit has something to edit.
 
     Without this the message existed only inside whichever agent turn built it, and
-    an edit would have nothing to apply to.
+    an edit would have nothing to apply to. The `job` snapshot rides along so a run
+    that never saw the job can still render its preview card header.
     """
     drafts = _read_json(EMAIL_DRAFTS, {})
     if not isinstance(drafts, dict):
         drafts = {}
+    previous = drafts.get(job_id) if isinstance(drafts.get(job_id), dict) else {}
     draft = {"to": to, "subject": subject, "body": body,
              "attachments": list(attachments or []), "updated_at": _now_iso()}
+    snapshot = _job_snapshot(job) or previous.get("job")
+    if snapshot:
+        draft["job"] = snapshot
     drafts[job_id] = draft
     _write_json(EMAIL_DRAFTS, drafts)
     return draft
+
+
+def draft_job(job_id: str) -> Dict[str, Any]:
+    """The job snapshot stored with the draft — enough to render the preview card."""
+    draft = load_draft(job_id) or {}
+    snapshot = draft.get("job")
+    if isinstance(snapshot, dict) and snapshot:
+        return dict(snapshot)
+    return {"job_id": job_id}
 
 
 def load_draft(job_id: str) -> Optional[Dict[str, Any]]:
@@ -386,6 +420,183 @@ def get_awaiting_edit() -> Optional[str]:
 
 def clear_awaiting_edit() -> None:
     _write_json(AWAITING_EDIT, {})
+
+
+# ---------------------------------------------------------------------------
+# Durable approve/skip record + staged drafts
+#
+# The review card and the tap that answers it can be DAYS apart, and are almost
+# never in the same process: the run sends the card and ends, the user taps later,
+# and a much later run reconciles the tap from the saved offset. Anything the
+# second gate needs must therefore live on disk BEFORE the card goes out — the
+# email body, the attachment paths, the company name for the card header. Held only
+# in the sending turn's context, they die with it, and the approve tap arrives with
+# nothing left to build an email preview from.
+# ---------------------------------------------------------------------------
+
+JOB_DECISIONS = os.path.join(_DATA, "job_decisions.json")
+EMAIL_PREVIEWS = os.path.join(_DATA, "email_previews.json")
+
+_EMAIL_MESSAGE_FILE = "email_message.txt"
+
+
+def record_job_decision(job_id: str, decision: str) -> bool:
+    """Record the FIRST gate's answer durably. Idempotent -> False if already set.
+
+    `approved_queue.json` cannot serve this purpose: the application agent drains it,
+    so a job that was approved and applied is indistinguishable from one never
+    approved at all. This store is the lasting fact.
+    """
+    if decision not in ("approved", "skipped"):
+        raise ValueError(f"decision must be approved|skipped, got {decision!r}")
+    store = _read_json(JOB_DECISIONS, {})
+    if not isinstance(store, dict):
+        store = {}
+    if job_id in store:
+        return False
+    store[job_id] = {"decision": decision, "ts": _now_iso()}
+    _write_json(JOB_DECISIONS, store)
+    return True
+
+
+def job_decision(job_id: str) -> Optional[str]:
+    """"approved" | "skipped" | None (not tapped yet)."""
+    store = _read_json(JOB_DECISIONS, {})
+    rec = store.get(job_id) if isinstance(store, dict) else None
+    return rec.get("decision") if isinstance(rec, dict) else None
+
+
+def approved_queue() -> List[str]:
+    """Job IDs currently waiting for the application agent."""
+    queue = _read_json(APPROVED_QUEUE, [])
+    return [j for j in queue if isinstance(j, str)] if isinstance(queue, list) else []
+
+
+def is_approved(job_id: str) -> bool:
+    """True if the user tapped Approve — whether or not the queue has been drained."""
+    return job_decision(job_id) == "approved" or job_id in approved_queue()
+
+
+def mark_preview_sent(job_id: str, message_id: Optional[int] = None) -> None:
+    """Remember that the email-preview card is on the user's phone.
+
+    Re-sending after an Edit just refreshes the timestamp: the newest card is the
+    one that matters, and the record exists to stop the sweep sending duplicates,
+    not to count cards.
+    """
+    store = _read_json(EMAIL_PREVIEWS, {})
+    if not isinstance(store, dict):
+        store = {}
+    store[job_id] = {"sent_at": _now_iso(), "message_id": message_id}
+    _write_json(EMAIL_PREVIEWS, store)
+
+
+def preview_sent(job_id: str) -> bool:
+    store = _read_json(EMAIL_PREVIEWS, {})
+    return isinstance(store, dict) and job_id in store
+
+
+def pending_email_previews() -> List[str]:
+    """Approved jobs whose email preview card is missing — the stall this fixes.
+
+    A job qualifies when it was approved, has a staged draft to preview, has no
+    Send/Cancel answer yet, and has never been shown a preview card. That is exactly
+    the state a job lands in when the approve tap is reconciled by a later run.
+    """
+    drafts = _read_json(EMAIL_DRAFTS, {})
+    if not isinstance(drafts, dict):
+        return []
+    return sorted(job_id for job_id in drafts
+                  if is_approved(job_id)
+                  and email_decision(job_id) is None
+                  and not preview_sent(job_id))
+
+
+# ---------------------------------------------------------------------------
+# PURE: staging an email draft from the tailored artifacts on disk
+# ---------------------------------------------------------------------------
+
+def parse_email_message(raw: str) -> Dict[str, Optional[str]]:
+    """Split `email_message.txt` into {subject, body}.
+
+    A leading "Subject: ..." line is the subject and the rest is the body; with no
+    such line the whole file is the body and the subject is left to the caller.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return {"subject": None, "body": ""}
+    first, _, rest = text.partition("\n")
+    if first.strip().lower().startswith("subject:"):
+        return {"subject": first.split(":", 1)[1].strip() or None, "body": rest.strip()}
+    return {"subject": None, "body": text}
+
+
+def resolve_output_dir(job: Dict[str, Any]) -> Optional[str]:
+    """The job's `output/<company>_<role>/` dir, from an explicit key or its files."""
+    explicit = job.get("output_dir")
+    if explicit and os.path.isdir(explicit):
+        return explicit
+    files = job.get("files") or {}
+    for key in ("resume", "cover_letter"):
+        path = files.get(key)
+        if path:
+            parent = os.path.dirname(path)
+            if os.path.isdir(parent):
+                return parent
+    return None
+
+
+def draft_attachments(job: Dict[str, Any], output_dir: Optional[str] = None) -> List[str]:
+    """Existing PDFs to attach: the job's declared files, else the output dir's PDFs."""
+    files = job.get("files") or {}
+    found = [p for p in (files.get("resume"), files.get("cover_letter"))
+             if p and os.path.exists(p)]
+    if found:
+        return found
+    out = output_dir or resolve_output_dir(job)
+    if not out:
+        return []
+    for pattern in ("Resume_*.pdf", "CoverLetter_*.pdf"):
+        found.extend(sorted(glob.glob(os.path.join(out, pattern))))
+    return found
+
+
+def stage_email_draft(job: Dict[str, Any], subject: Optional[str] = None,
+                      body: Optional[str] = None,
+                      attachments: Optional[List[str]] = None,
+                      output_dir: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Persist the email for `job` BEFORE the review card goes out. None if there is
+    no email to stage (no recruiter address, or no tailored email text written yet).
+
+    Never overwrites an existing draft: the user may already have edited it, and a
+    re-sent review card must not silently revert their words.
+    """
+    job_id = job.get("job_id")
+    to = ((job.get("email") or {}).get("address") or "").strip()
+    if not job_id or not to:
+        return None
+    existing = load_draft(job_id)
+    if existing is not None:
+        return existing
+
+    out = output_dir or resolve_output_dir(job)
+    if body is None and out:
+        try:
+            with open(os.path.join(out, _EMAIL_MESSAGE_FILE), "r", encoding="utf-8") as fh:
+                parsed = parse_email_message(fh.read())
+            body = parsed["body"]
+            subject = subject or parsed["subject"]
+        except OSError:
+            body = None
+    if not body:
+        return None  # nothing tailored to preview; never invent an email body
+
+    if not subject:
+        title = job.get("title") or "your role"
+        subject = f"Application: {title}"
+    if attachments is None:
+        attachments = draft_attachments(job, out)
+    return save_draft(job_id, to, subject, body, attachments, job=job)
 
 
 def record_email_decision(job_id: str, decision: str) -> bool:
@@ -480,9 +691,23 @@ def build_email_preview_text(job: Dict[str, Any], msg: Any,
 # ---------------------------------------------------------------------------
 
 def send_review_card(job: Dict[str, Any], resume_pdf: Optional[str],
-                     cover_pdf: Optional[str]) -> int:
+                     cover_pdf: Optional[str], stage_draft: bool = True) -> int:
     """Send the card (text + Approve/Skip buttons) then attach existing PDFs.
-    Returns the sent message_id."""
+    Returns the sent message_id.
+
+    Staging the email draft happens HERE, before the card goes out, rather than
+    after the approve tap: the tap is usually reconciled by a later run that never
+    saw this job, and an email it cannot rebuild is an email the user never gets
+    asked about. Staging failures are non-fatal — a job whose draft could not be
+    staged still deserves its review card.
+    """
+    if stage_draft:
+        try:
+            stage_email_draft(job, attachments=[p for p in (resume_pdf, cover_pdf)
+                                                if p and os.path.exists(p)] or None)
+        except OSError:
+            pass
+
     present, missing = resolve_attachments(job, resume_pdf, cover_pdf)
     text = build_card_text(job, missing)
     keyboard = build_inline_keyboard(job.get("job_id", ""))
@@ -515,7 +740,12 @@ def send_email_preview_card(job: Dict[str, Any], msg: Any) -> int:
         "reply_markup": json.dumps(build_email_keyboard(job.get("job_id", ""))),
         "disable_web_page_preview": True,
     })
-    return resp["result"]["message_id"]
+    message_id = resp["result"]["message_id"]
+    # Recorded here, not by the caller: this is the one place that knows the card
+    # actually left, and the pending sweep reads this record to decide whether a job
+    # is still waiting for its second gate.
+    mark_preview_sent(job.get("job_id", ""), message_id)
+    return message_id
 
 
 def send_edit_prompt(job: Dict[str, Any]) -> int:
@@ -576,15 +806,22 @@ def send_result_notice(job: Dict[str, Any], result: Dict[str, Any]) -> int:
     return resp["result"]["message_id"]
 
 
-def poll_responses(offset: Optional[int] = None) -> Tuple[List[Dict[str, Any]], int]:
+def poll_responses(offset: Optional[int] = None,
+                   timeout: int = 0) -> Tuple[List[Dict[str, Any]], int]:
     """Fetch updates from `offset`, parse them, apply /pause, persist the offset.
 
     Returns (events, new_offset). Callers act on the events (update Notion,
     enqueue approved). /pause is applied here so the flag is set immediately.
+
+    `timeout` is Telegram's long-poll window in seconds: 0 returns whatever is
+    already queued, and a non-zero value waits that long for a tap to arrive — the
+    difference between catching a tap made during a run and making the user wait
+    for the next one. Keep it below `_HTTP_TIMEOUT` so the HTTP read outlives the poll.
     """
     if offset is None:
         offset = load_offset()
-    resp = _api("getUpdates", data={"offset": offset, "timeout": 0})
+    timeout = max(0, min(int(timeout), _HTTP_TIMEOUT - 5))
+    resp = _api("getUpdates", data={"offset": offset, "timeout": timeout})
     events, new_offset = parse_updates(resp, offset)
 
     for ev in events:
