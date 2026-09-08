@@ -39,6 +39,7 @@ import requests
 # ---------------------------------------------------------------------------
 
 import paths  # single source of truth for paths (§4); sibling import, scripts/ on sys.path
+import notion_schema  # single source of truth for the dual-channel email fields
 
 _DATA = paths.data_dir()                       # makedirs target for save_offset/set_pause
 STATE_PATH = paths.telegram_state_path()
@@ -91,8 +92,8 @@ def _api(method: str, data: Optional[Dict[str, Any]] = None,
 def _derive_channel(job: Dict[str, Any]) -> str:
     if job.get("channel") in ("portal", "email"):
         return job["channel"]
-    email = job.get("email") or {}
-    if email.get("address") and email.get("source") not in (None, "", "none"):
+    email = notion_schema._resolve_email(job)
+    if email["address"] and email["source"] not in (None, "", "none"):
         return "email"
     return "portal"
 
@@ -150,7 +151,7 @@ def build_card_text(job: Dict[str, Any], missing_attachments: Optional[List[str]
     """Render the exact review-card text for a job (per the agent definition)."""
     company_analysis = job.get("company_analysis") or {}
     match = job.get("match") or {}
-    email = job.get("email") or {}
+    email = notion_schema._resolve_email(job)
     website = company_analysis.get("website") or job.get("company_domain") or "—"
     channel = _derive_channel(job)
     what_changed = job.get("what_i_changed_summary")
@@ -166,7 +167,7 @@ def build_card_text(job: Dict[str, Any], missing_attachments: Optional[List[str]
         f"📝 What I changed: {what_changed}",
         f"🔗 Job: {job.get('url', '—')}       📄 Notion: {job.get('notion_url', '—')}",
     ]
-    if channel == "email" and email.get("address"):
+    if channel == "email" and email["address"]:
         lines.append(
             f"✉️ To: {email['address']} "
             f"(confidence {email.get('confidence', '—')}%, source {email.get('source', '—')})"
@@ -608,7 +609,7 @@ def stage_email_draft(job: Dict[str, Any], subject: Optional[str] = None,
     re-sent review card must not silently revert their words.
     """
     job_id = job.get("job_id")
-    to = ((job.get("email") or {}).get("address") or "").strip()
+    to = (notion_schema._resolve_email(job)["address"] or "").strip()
     if not job_id or not to:
         return None
     existing = load_draft(job_id)
