@@ -104,7 +104,14 @@ Run a single stage manually with **`/alfred-find`**, **`-research`**, **`-tailor
 **`-approve`**, or **`-apply`** — each still honors `dry_run`, `/pause`, and daily caps. Use `/loop` to
 repeat a run while the session stays open.
 
-Telegram commands: **✅ Approve** / **⏭️ Skip** per job, and **/pause** to halt all sending.
+**`/alfred-backfill`** recovers a backlog: jobs already tailored and tracked in Notion whose email
+was never put in front of you get their draft staged and their Send/Edit/Cancel card sent — no
+re-running the pipeline, and no new jobs found. It sends no email; it asks.
+
+Telegram commands: **✅ Approve** / **⏭️ Skip** per job, then **📧 Send** / **✏️ Edit** / **🚫 Cancel**
+on the email preview, and **/pause** to halt all sending.
+
+Want those cards to reach you with the laptop shut? Run the always-on worker — **`deploy/README.md`**.
 
 See [`RUNBOOK.md`](RUNBOOK.md) for the full step-by-step sequence and the canonical job-object
 data contract.

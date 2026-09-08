@@ -218,6 +218,34 @@ next laptop run. Plugin → 1.6.0.
 
 ---
 
+## Step 11 — backfill: emailing the jobs already prepared  ✅
+
+Steps 9 and 10 fixed the flow going forward. They did nothing for the jobs already sitting in
+Notion, tailored and reviewed, whose email was never asked about — and those are the ones the
+user wants to send today.
+
+The blocker: a job's recruiter address and tailored file paths only ever lived in the agent turn
+that built them. Nothing local kept them. But **Notion did** — HR Email, Job ID, Resume File,
+Cover Letter File, Status — so a Notion row is a complete recovery source.
+
+- [x] `notion_schema.job_from_row()` / `jobs_from_rows()` — the inverse of `row_properties`, in the
+      module that already owns the property names so the mapping cannot drift. Handles both the
+      query and fetch response shapes; drops rows with no Job ID rather than half-staging them.
+- [x] `approval_poll.py --stage` now accepts raw Notion rows as well as job objects, and **records
+      the approval for a row at "Approved"** — the missing piece, since a job approved before the
+      local decision store existed reads as never-approved and never qualifies for its card.
+- [x] `/alfred-backfill` — query Notion → stage → `--sweep` → report, including an honest per-job
+      account of what staged nothing and why.
+- [x] `scripts/dry_run_backfill.py` — 32 checks: full round trip, the backlog case, re-run safety
+      (never clobbers a user's edit, never duplicates a card), and the rows that must NOT produce
+      an email (portal-only, Skipped).
+
+**Guardrails held, deliberately:** `caps.emails_per_day` still meters a backlog — thirty recovered
+jobs are not thirty emails today. No address in Notion stays portal-only; a recruiter address is
+never invented to make a job emailable.
+
+---
+
 ## Guardrails (unchanged, never violate)
 Truthful tailoring · format lock · mandatory "what I changed" note · Telegram approve before any send ·
 human final click on ban-prone portals · `dry_run` blocks real sends · `/pause` halts the application

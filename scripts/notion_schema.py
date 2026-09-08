@@ -1,9 +1,15 @@
 """Alfred · notion_schema — single source of truth for the Notion tracker.
 
-Pure and offline (stdlib only). Two responsibilities:
+Pure and offline (stdlib only). Three responsibilities:
   - database_schema() -> Notion PROPERTY DEFINITIONS (for create-database).
   - row_properties(job) -> Notion PROPERTY VALUES for one enriched+tailored job
     (for create-page / update-page).
+  - job_from_row(row) -> the INVERSE: a Notion row back into a job dict.
+
+The inverse exists because Notion is the only durable record of a job's recruiter
+address and tailored file paths — the enriched job object itself lives in the agent
+turn that built it and is gone by the next run. Rehydrating from Notion is what lets
+Alfred stage (and email) a job prepared days ago without re-running the pipeline.
 
 Both derive their property NAMES from the same PROPERTIES table, so names can
 never drift between the schema and the row mapping. The tracker subagent and any
@@ -243,3 +249,85 @@ def row_properties(job: Dict[str, Any],
         COLD_EMAILED: _checkbox(email.get("cold_email")),
         BOUNCED: _checkbox(job.get("bounced", False)),
     }
+
+
+# ---------------------------------------------------------------------------
+# job_from_row(row) — the INVERSE of row_properties
+# ---------------------------------------------------------------------------
+
+def _read_text(prop: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Plain text out of a Notion title/rich_text property value."""
+    if not isinstance(prop, dict):
+        return None
+    for key in ("title", "rich_text"):
+        chunks = prop.get(key)
+        if isinstance(chunks, list):
+            text = "".join(
+                (c.get("plain_text") or (c.get("text") or {}).get("content") or "")
+                for c in chunks if isinstance(c, dict))
+            return text or None
+    return None
+
+
+def _read_scalar(prop: Optional[Dict[str, Any]], key: str) -> Optional[Any]:
+    return prop.get(key) if isinstance(prop, dict) else None
+
+
+def _read_select(prop: Optional[Dict[str, Any]]) -> Optional[str]:
+    sel = _read_scalar(prop, "select")
+    return sel.get("name") if isinstance(sel, dict) else None
+
+
+def _read_multi_select(prop: Optional[Dict[str, Any]]) -> List[str]:
+    items = _read_scalar(prop, "multi_select")
+    return [i.get("name") for i in items
+            if isinstance(i, dict) and i.get("name")] if isinstance(items, list) else []
+
+
+def job_from_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Rebuild a job dict from one Notion page (or its bare `properties` map).
+
+    Best-effort and lossless where it matters: the Job ID, the recruiter address and
+    the tailored file paths — everything needed to stage an email draft and preview it.
+    `status` rides along so a caller can tell an already-Approved job from a new one.
+
+    Accepts either a full page object or just its properties, because Notion's query
+    and fetch responses differ in shape and neither is worth making the caller unwrap.
+    """
+    props = row.get("properties") if isinstance(row.get("properties"), dict) else row
+    props = props if isinstance(props, dict) else {}
+
+    address = _read_scalar(props.get(HR_EMAIL), "email")
+    channels = _read_multi_select(props.get(CHANNEL))
+    resume = _read_text(props.get(RESUME_FILE))
+    cover = _read_text(props.get(COVER_LETTER_FILE))
+    website = _read_scalar(props.get(WEBSITE), "url")
+
+    return {
+        "job_id": _read_text(props.get(JOB_ID)),
+        "company": _read_text(props.get(COMPANY)),
+        "title": _read_text(props.get(ROLE)),
+        "location": _read_text(props.get(LOCATION)),
+        "url": _read_scalar(props.get(JOB_LINK), "url"),
+        "notion_url": row.get("url") if isinstance(row.get("url"), str) else None,
+        "company_analysis": {"website": website} if website else None,
+        "match": {"score": _read_scalar(props.get(MATCH_SCORE), "number")},
+        "email": {
+            "address": address,
+            "recipient_name": _read_text(props.get(HR_NAME)),
+            "confidence": _read_scalar(props.get(EMAIL_CONFIDENCE), "number"),
+            "source": _read_select(props.get(EMAIL_SOURCE)) or ("none" if not address else None),
+        },
+        "channel": "email" if "email" in channels else "portal",
+        "files": {"resume": resume, "cover_letter": cover},
+        "what_i_changed": _read_text(props.get(WHAT_I_CHANGED)),
+        "status": _read_select(props.get(STATUS)),
+        "cold_emailed": bool(_read_scalar(props.get(COLD_EMAILED), "checkbox")),
+    }
+
+
+def jobs_from_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """`job_from_row` over a query result, dropping rows with no Job ID — a row Alfred
+    cannot key on is one it cannot stage, enqueue, or avoid emailing twice."""
+    jobs = [job_from_row(r) for r in rows or [] if isinstance(r, dict)]
+    return [j for j in jobs if j.get("job_id")]

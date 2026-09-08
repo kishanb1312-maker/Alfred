@@ -28,7 +28,9 @@ Usage
     approval_poll.py --send                # also send emails the user already cleared
     approval_poll.py --sweep               # only send the missing preview cards
     approval_poll.py --preview <job_id>    # (re-)send one job's preview card
-    approval_poll.py --stage <job.json>    # stage a job's email draft from its output dir
+    approval_poll.py --stage <jobs.json>   # stage drafts from job objects OR Notion rows
+                                           # (a row at "Approved" is recorded as approved,
+                                           #  so its preview card gets sent by --sweep)
     approval_poll.py --status              # print local state as JSON; no network
 
 One bad job never takes the pass down: a card that fails is caught, recorded under
@@ -225,21 +227,51 @@ def status() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def _stage_from_file(path: str) -> Dict[str, Any]:
-    """Stage the email draft for a job described by a canonical job-object JSON file."""
+    """Stage email drafts from a job-object JSON file (one job, or a list).
+
+    Accepts either canonical job objects or raw Notion rows — Notion is the only durable
+    record of a job's recruiter address and tailored file paths, so rehydrating from it is
+    how a job prepared days ago becomes emailable without re-running the pipeline.
+
+    A job carrying `status: "Approved"` also has that approval recorded locally. Without
+    this, a job approved before the local decision store existed reads as never-approved:
+    Notion says Approved, Alfred has no record, and the job never qualifies for its email
+    preview card. Recording it is what un-sticks exactly that job.
+    """
     with open(path, "r", encoding="utf-8") as fh:
         payload = json.load(fh)
+    if isinstance(payload, dict) and isinstance(payload.get("results"), list):
+        payload = payload["results"]          # a raw Notion query response
     jobs = payload if isinstance(payload, list) else [payload]
+
     staged: List[Dict[str, Any]] = []
-    for job in jobs:
+    for entry in jobs:
+        if not isinstance(entry, dict):
+            continue
+        job = entry
+        if "properties" in entry or "job_id" not in entry:
+            import notion_schema
+            job = notion_schema.job_from_row(entry)   # it is a Notion row, not a job
+        job_id = job.get("job_id")
+        if not job_id:
+            staged.append({"job_id": None, "staged": False, "reason": "no Job ID"})
+            continue
+
+        approved = str(job.get("status") or "").strip().lower() == "approved"
+        if approved:
+            tb.record_job_decision(job_id, "approved")
+            tb.enqueue_approved(job_id)
+
         draft = tb.stage_email_draft(job)
         staged.append({
-            "job_id": job.get("job_id"),
+            "job_id": job_id,
             "staged": draft is not None,
+            "approved": approved,
             "to": (draft or {}).get("to"),
             "attachments": (draft or {}).get("attachments"),
             "reason": None if draft else "no recruiter address or no email_message.txt",
         })
-    return {"staged": staged}
+    return {"staged": staged, "now_pending_preview": tb.pending_email_previews()}
 
 
 def _emit(summary: Dict[str, Any]) -> int:
@@ -269,8 +301,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="poll and dispatch, but skip the missing-preview sweep")
     parser.add_argument("--preview", metavar="JOB_ID",
                         help="(re-)send the email preview card for one job")
-    parser.add_argument("--stage", metavar="JOB_JSON",
-                        help="stage the email draft(s) from a canonical job-object JSON")
+    parser.add_argument("--stage", metavar="JOBS_JSON",
+                        help="stage email draft(s) from job objects or exported Notion rows; "
+                             "rows at Approved are recorded as approved")
     parser.add_argument("--send", action="store_true",
                         help="also send emails the user cleared (guardrails in email_gate)")
     parser.add_argument("--status", action="store_true",
