@@ -15,15 +15,17 @@ So the tap → next-card step is code, not instructions. Every tap gets its cons
 the same process that read it, and a `--sweep` catches any approved job still missing its
 preview card.
 
-What it does NOT do: it never sends email and never touches Notion. It records decisions,
-sends cards, and prints a JSON summary the calling agent uses to update Notion. The actual
-recruiter email stays where it was — behind the application agent, gated on a `"cleared"`
-decision, `dry_run`, `/pause`, and the daily caps.
+It never touches Notion — it records decisions, sends cards, and prints a JSON summary the
+calling agent turns into Notion updates. It does not send email either, unless explicitly
+asked with `--send`, which hands the work to `email_gate.perform_send` and its guardrails
+(`"cleared"` decision, `/pause`, bounce throttle, daily cap, `dry_run`, send-once). That flag
+is what the always-on worker uses; a plain poll stays send-free.
 
 Usage
 -----
     approval_poll.py                       # poll once, dispatch, then sweep
     approval_poll.py --timeout 60          # long-poll up to 60s for an immediate tap
+    approval_poll.py --send                # also send emails the user already cleared
     approval_poll.py --sweep               # only send the missing preview cards
     approval_poll.py --preview <job_id>    # (re-)send one job's preview card
     approval_poll.py --stage <job.json>    # stage a job's email draft from its output dir
@@ -97,11 +99,16 @@ def _ack(callback_query_id: Optional[str], text: str) -> None:
 # Dispatch — one event in, its consequence out
 # ---------------------------------------------------------------------------
 
-def dispatch(events: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Act on parsed events. Returns a summary for the caller (and for Notion)."""
+def dispatch(events: List[Dict[str, Any]], send_emails: bool = False) -> Dict[str, Any]:
+    """Act on parsed events. Returns a summary for the caller (and for Notion).
+
+    `send_emails` decides what a Send tap means here: recorded only (the default, leaving
+    the send to the application agent), or carried out immediately via `email_gate` — which
+    is what lets a worker complete the whole flow with the user's laptop shut.
+    """
     out: Dict[str, Any] = {
         "approved": [], "skipped": [], "email_cleared": [], "email_cancelled": [],
-        "edits_applied": [], "previews": [], "commands": [], "errors": [],
+        "edits_applied": [], "previews": [], "sends": [], "commands": [], "errors": [],
     }
 
     for ev in events:
@@ -154,8 +161,16 @@ def dispatch(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         elif decision == "send":
             first = tb.record_email_decision(job_id, "cleared")
             out["email_cleared"].append(job_id)
-            _ack(cq, "Send confirmed 📧 — Alfred will send it on the next apply run"
+            _ack(cq, ("Sending now 📧…" if send_emails else
+                      "Send confirmed 📧 — Alfred will send it on the next apply run")
                  if first else "Already answered")
+            if send_emails:
+                try:
+                    import email_gate
+                    out["sends"].append(email_gate.perform_send(job_id))
+                except Exception as exc:  # noqa: BLE001
+                    out["errors"].append({"job_id": job_id,
+                                          "error": f"{type(exc).__name__}: {exc}"})
 
         elif decision == "cancel":
             first = tb.record_email_decision(job_id, "cancelled")
@@ -201,6 +216,7 @@ def status() -> Dict[str, Any]:
         "staged_drafts": sorted(drafts) if isinstance(drafts, dict) else [],
         "awaiting_edit": tb.get_awaiting_edit(),
         "pending_email_previews": tb.pending_email_previews(),
+        "cleared_unsent": __import__("email_gate").cleared_unsent(),
     }
 
 
@@ -255,6 +271,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="(re-)send the email preview card for one job")
     parser.add_argument("--stage", metavar="JOB_JSON",
                         help="stage the email draft(s) from a canonical job-object JSON")
+    parser.add_argument("--send", action="store_true",
+                        help="also send emails the user cleared (guardrails in email_gate)")
     parser.add_argument("--status", action="store_true",
                         help="print local state as JSON and exit (no network)")
     args = parser.parse_args(argv)
@@ -275,11 +293,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _emit(sweep())
 
     events, new_offset = tb.poll_responses(timeout=args.timeout)
-    summary = dispatch(events)
+    summary = dispatch(events, send_emails=args.send)
     summary["offset"] = new_offset
     summary["events"] = len(events)
     if not args.no_sweep:
         sweep(summary)
+    if args.send:
+        import email_gate
+        summary.setdefault("sends", []).extend(email_gate.send_cleared())
     summary["paused"] = tb.is_paused()
     return _emit(summary)
 

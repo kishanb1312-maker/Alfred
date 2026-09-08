@@ -185,6 +185,39 @@ and the daily caps.
 
 ---
 
+## Step 10 — the always-on worker: Telegram works with the laptop off  ✅
+
+Step 9 fixed *what* happens on a tap. This fixes *when*: a tap only did something while a run
+happened to be polling, so approving at midnight meant waiting for tomorrow — and Telegram
+drops un-fetched updates after 24h, so a slow week could lose the tap entirely.
+
+- [x] **`scripts/email_gate.py`** — the single place a `"cleared"` decision becomes a sent
+      email, shared by the worker and the application agent so one send-once record
+      (`data/email_sent.json`) covers both. Guardrails in order: already-sent → cleared-only →
+      `/pause` → bounce throttle → daily cap → `dry_run` → send → notify. An unreadable
+      `search.yaml` reads as `dry_run: true`; a failing send gives up after 3 attempts instead
+      of re-notifying on every cycle.
+- [x] **`scripts/alfred_worker.py`** — long-poll loop, exponential backoff, SIGTERM handled so
+      a container restart never lands mid-send. Sweeps missing preview cards AND cleared-unsent
+      emails on every cycle, so whatever it missed while down is picked up from disk.
+- [x] `approval_poll.py --send` — the same behavior for a one-shot/cron run; a plain poll is
+      still send-free.
+- [x] **Portable drafts** — attachment paths stored relative to the Alfred home, so a draft
+      staged on the laptop resolves on the worker host. `rsync` is the whole sync story.
+- [x] `daily_caps` now resolves its path at call time; the module-level default argument bound
+      it at import, so the cap guardrail could not be tested against a temp store — and a dry
+      run was writing to the real counts file.
+- [x] **`deploy/`** — Dockerfile, systemd unit, and a README covering the three hosting
+      options, the sync step, and what the worker deliberately cannot do.
+- [x] `scripts/dry_run_worker.py` — 44 checks with `_smtp_send` patched to raise, so any check
+      that passes while SMTP fires is a failure. Includes a full laptop-off round trip.
+
+**The honest boundary, stated everywhere:** the worker is the EMAIL half. Portal applications
+need the user's signed-in browser and still happen on their machine; Notion catches up on the
+next laptop run. Plugin → 1.6.0.
+
+---
+
 ## Guardrails (unchanged, never violate)
 Truthful tailoring · format lock · mandatory "what I changed" note · Telegram approve before any send ·
 human final click on ban-prone portals · `dry_run` blocks real sends · `/pause` halts the application

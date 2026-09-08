@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import date
-from typing import Dict
+from typing import Dict, Optional
 
 import paths  # single source of truth for paths (§4); sibling import, scripts/ on sys.path
 
@@ -46,18 +46,30 @@ def _save(data: Dict[str, Dict[str, int]], path: str) -> None:
     os.replace(tmp, path)
 
 
-def count(kind: str, *, path: str = COUNTS_PATH) -> int:
+def _counts_path(path: Optional[str] = None) -> str:
+    """Resolve the counts file at CALL time.
+
+    A module-level default argument would bind `COUNTS_PATH` once at import, so
+    re-pointing the module at another Alfred home — a test, a relocated install — would
+    silently keep writing to the original file. The send cap is a guardrail; it has to
+    count against the store it is actually protecting.
+    """
+    return path or COUNTS_PATH
+
+
+def count(kind: str, *, path: Optional[str] = None) -> int:
     """Today's recorded count for `kind` (0 if none)."""
-    return int(_load(path).get(_today(), {}).get(kind, 0))
+    return int(_load(_counts_path(path)).get(_today(), {}).get(kind, 0))
 
 
-def remaining(kind: str, cap: int, *, path: str = COUNTS_PATH) -> int:
+def remaining(kind: str, cap: int, *, path: Optional[str] = None) -> int:
     """How many more `kind` actions are allowed today given `cap` (>= 0)."""
-    return max(0, int(cap) - count(kind, path=path))
+    return max(0, int(cap) - count(kind, path=_counts_path(path)))
 
 
-def record(kind: str, *, path: str = COUNTS_PATH) -> int:
+def record(kind: str, *, path: Optional[str] = None) -> int:
     """Increment today's count for `kind`; return the new count."""
+    path = _counts_path(path)
     data = _load(path)
     today = _today()
     day = data.setdefault(today, {})
@@ -66,8 +78,9 @@ def record(kind: str, *, path: str = COUNTS_PATH) -> int:
     return day[kind]
 
 
-def reset_today(*, path: str = COUNTS_PATH) -> None:
+def reset_today(*, path: Optional[str] = None) -> None:
     """Clear today's counts (used by tests/dry-runs)."""
+    path = _counts_path(path)
     data = _load(path)
     data.pop(_today(), None)
     _save(data, path)

@@ -77,9 +77,17 @@ Approval of the job is **not** approval of the email. Before sending anything, c
 that draft is the version they approved. Rebuilding from the original tailored email would
 send something they explicitly changed.
 
-**Report the outcome.** Use `send_safe(msg, dry_run)` and pass the result to
-`send_result_notice(job, result)` so every Send tap is answered in Telegram — success or the
-real error.
+**Send through `scripts/email_gate.py :: perform_send(job_id)`, not by hand.** It is the one
+place a `"cleared"` decision becomes a sent email, and it enforces the whole list in order:
+send-once (`data/email_sent.json`), cleared-only, `/pause`, the bounce throttle, the daily
+cap, `dry_run` — then reports the outcome with `send_result_notice`, so every Send tap is
+answered in Telegram with either ✅ or the real error.
+
+**This matters because you may not be the one sending.** If the user runs the always-on
+worker (`scripts/alfred_worker.py`, see `deploy/README.md`), it may already have sent this
+email while their laptop was off. The shared send-once record is what stops the same email
+going out twice — which is why you must never build and send a message yourself, even
+though the pieces to do so are right there.
 
 Never send an email whose decision is not `"cleared"`, and never treat a missing decision as
 consent. `dry_run` still applies on top of this: cleared plus `dry_run: true` means log what
@@ -124,7 +132,8 @@ storm of dead guesses.
 - Update Notion Status = **"Applied"**, set **Applied Date**.
 - Set Notion **`Channel`** to include `portal` and (if emailed) `email`; tick **`Cold Emailed`** when
   an email was sent; tick **`Bounced`** if it bounced.
-- `scripts/applied_history.py : mark_applied(job_id)`.
+- `scripts/applied_history.py : mark_applied(job_id)`. Do NOT re-record `daily_caps.record("email")`
+  for an email `perform_send` already sent — it counts its own.
 - Remove the Job ID from `data/approved_queue.json` — but **only once both channels are
   settled**: the portal action is done AND the email is sent, cancelled, or absent. Dropping a
   job while `email_decision(job_id)` is still `None` orphans its email; the portal application

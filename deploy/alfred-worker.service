@@ -1,0 +1,51 @@
+# Alfred · always-on worker (systemd) — for a Raspberry Pi, an old laptop, or a VPS.
+#
+#   sudo cp deploy/alfred-worker.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now alfred-worker
+#   journalctl -u alfred-worker -f          # what it is doing right now
+#
+# Edit User/paths below to match the host. The worker is deliberately NOT run as root: it
+# reads the resume, the cover letters and the Gmail app password.
+
+[Unit]
+Description=Alfred Telegram worker (approve -> email preview -> send)
+Documentation=https://github.com/kishanb1312-maker/Alfred
+# Telegram long-polling is pointless before the network is up, and the restart loop below
+# would otherwise burn its rate limit during boot.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=alfred
+WorkingDirectory=/opt/alfred
+Environment=ALFRED_HOME=/home/alfred/.alfred
+Environment=PYTHONUNBUFFERED=1
+# The four secrets (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, GMAIL_ADDRESS,
+# GMAIL_APP_PASSWORD) are read from the Alfred home's .env by paths.py — keep that file
+# 0600 and owned by this user. No secret belongs in this unit file.
+ExecStart=/home/alfred/.alfred/.venv/bin/python /opt/alfred/scripts/alfred_worker.py
+
+# A worker that stays down is the whole bug coming back, so always restart. The delay
+# keeps a crash loop from hammering Telegram.
+Restart=always
+RestartSec=10s
+
+# SIGTERM is handled: the worker finishes the cycle in flight, so a restart never lands
+# mid-send. Give it room to finish rather than killing it.
+KillSignal=SIGTERM
+TimeoutStopSec=90
+
+# It needs the network, its own home, and nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/alfred/.alfred
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

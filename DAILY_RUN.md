@@ -70,3 +70,16 @@ ls data/paused.flag 2>/dev/null     # should not exist
 
 That last row is why the summary is mandatory: silence means the scheduler failed, not that
 Alfred found nothing.
+
+## Approving after the run, with the laptop shut
+
+The run above ends after the review cards. Your Approve / Send taps then need something
+awake to collect them — otherwise they wait for the next run, and Telegram drops taps it
+could not deliver after 24 hours.
+
+Run `scripts/alfred_worker.py` on anything that stays on (Pi, VPS, container) and the whole
+email conversation works with the laptop off: Approve → preview card, Edit → re-preview,
+Send → the email actually goes out with a ✅ confirmation. Portal applications still wait
+for your laptop — they need your signed-in browser. Setup: **`deploy/README.md`**.
+
+Not running a worker? Then tap while the Mac is awake, and keep the 24-hour window in mind.

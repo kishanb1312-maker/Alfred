@@ -318,6 +318,33 @@ def _write_json(path: str, value: Any) -> None:
         json.dump(value, fh, indent=2, sort_keys=True)
 
 
+def _data_home() -> str:
+    """The user's Alfred home (parent of the data dir), resolved live so a test or a
+    relocated install is picked up rather than baked in at import."""
+    return os.path.dirname(_DATA)
+
+
+def _portable(path: str) -> str:
+    """Store a path inside the Alfred home RELATIVE to it, so a draft written on the
+    laptop still points at the right PDF on the always-on worker that sends it.
+    Absolute paths from outside the home are kept as-is — nothing to rebase them on."""
+    if not path:
+        return path
+    home = _data_home()
+    try:
+        rel = os.path.relpath(os.path.abspath(path), home)
+    except ValueError:  # different drive on Windows — no relative form exists
+        return path
+    return path if rel.startswith(os.pardir) else rel
+
+
+def _resolved(path: str) -> str:
+    """Inverse of `_portable`: make a stored path absolute for THIS machine."""
+    if not path or os.path.isabs(path):
+        return path
+    return os.path.join(_data_home(), path)
+
+
 _JOB_SNAPSHOT_KEYS = ("job_id", "company", "title", "location", "url", "notion_url")
 
 
@@ -342,7 +369,8 @@ def save_draft(job_id: str, to: str, subject: str, body: str,
         drafts = {}
     previous = drafts.get(job_id) if isinstance(drafts.get(job_id), dict) else {}
     draft = {"to": to, "subject": subject, "body": body,
-             "attachments": list(attachments or []), "updated_at": _now_iso()}
+             "attachments": [_portable(a) for a in (attachments or [])],
+             "updated_at": _now_iso()}
     snapshot = _job_snapshot(job) or previous.get("job")
     if snapshot:
         draft["job"] = snapshot
@@ -361,10 +389,18 @@ def draft_job(job_id: str) -> Dict[str, Any]:
 
 
 def load_draft(job_id: str) -> Optional[Dict[str, Any]]:
-    """The current draft for `job_id` — edits included — or None."""
+    """The current draft for `job_id` — edits included — or None.
+
+    Attachment paths come back absolute for THIS machine; they are stored relative to
+    the Alfred home so the store can move to the host that actually sends the email.
+    """
     drafts = _read_json(EMAIL_DRAFTS, {})
     d = drafts.get(job_id) if isinstance(drafts, dict) else None
-    return d if isinstance(d, dict) else None
+    if not isinstance(d, dict):
+        return None
+    d = dict(d)
+    d["attachments"] = [_resolved(a) for a in (d.get("attachments") or [])]
+    return d
 
 
 def parse_edit_text(raw: str) -> Dict[str, Optional[str]]:

@@ -130,6 +130,7 @@ agents/           Claude Code subagent definitions (the six workers)
 commands/         slash-command triggers (/alfred-run, /alfred-setup, per-stage …)
 skills/           onboarding wizard (alfred-onboarding)
 scripts/          deterministic Python helpers + the `alfred` CLI (run via Bash)
+deploy/           run the always-on worker so Telegram works with your laptop off
 config/           example search + screening config (committed; your real ones live in ~/.alfred)
 .mcp.json         declares the Notion connector (OAuth per-user; no credentials)
 SPEC.md           full design spec

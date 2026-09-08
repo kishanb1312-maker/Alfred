@@ -107,6 +107,12 @@ message that would leave the user's mailbox:
 **Sending this card sends no email.** Nothing reaches a company until the user taps Send and
 `email_decision(job_id)` reads back `"cleared"`.
 
+**If the user runs the always-on worker** (`scripts/alfred_worker.py` on a Pi, VPS or
+container — see `deploy/README.md`), it handles all of this while their laptop is off, and
+may have sent the email before you ever run. Read the state, never assume it: `email_decision`,
+`email_gate.already_sent(job_id)` and `approval_poll.py --status` tell you what has already
+happened. Do not re-ask a question the user has answered.
+
 **Every Send tap gets an answer.** After the send is attempted, report the outcome with
 `send_result_notice(job, result)` — ✅ sent, 🧪 dry run, ⏸️ channel paused, or ❌ failed with
 the real error text. Use `scripts/email_send.py :: send_safe(msg, dry_run)` rather than
