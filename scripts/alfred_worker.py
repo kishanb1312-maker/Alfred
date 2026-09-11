@@ -99,6 +99,8 @@ def _describe(summary: Dict[str, Any]) -> str:
     previews = [p for p in summary.get("previews", []) if p.get("preview") == "sent"]
     if previews:
         bits.append(f"previews={len(previews)}")
+    if summary.get("notices"):
+        bits.append(f"portal-only-notices={len(summary['notices'])}")
     for send in summary.get("sends", []):
         bits.append(f"send:{send.get('job_id')}="
                     f"{send.get('status') or send.get('reason')}")
@@ -113,12 +115,17 @@ def cycle(send_emails: bool = True, poll_timeout: int = _DEFAULT_POLL_TIMEOUT) -
     The two sweeps are what make the worker safe to restart: whatever it missed while it
     was down is picked up from the on-disk records rather than from the update stream.
     """
-    events, offset = tb.poll_responses(timeout=poll_timeout)
+    events, offset = tb.poll_responses(timeout=poll_timeout, commit=False)
     summary = ap.dispatch(events, send_emails=send_emails)
+    # Only now is it safe to tell Telegram we are done with these updates. Commit it
+    # first and a crash between the poll and the card — the exact window a restarting
+    # container lives in — destroys the tap rather than replaying it.
+    tb.save_offset(offset)
     summary["offset"] = offset
     summary["events"] = len(events)
 
     ap.sweep(summary)                     # approved jobs still missing a preview card
+    summary["notion_updates"] = ap.notion_plan()   # for the next Alfred run to apply
     if send_emails:
         summary.setdefault("sends", []).extend(email_gate.send_cleared())
     return summary

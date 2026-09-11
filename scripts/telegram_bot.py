@@ -473,6 +473,7 @@ def clear_awaiting_edit() -> None:
 
 JOB_DECISIONS = os.path.join(_DATA, "job_decisions.json")
 EMAIL_PREVIEWS = os.path.join(_DATA, "email_previews.json")
+PORTAL_NOTICES = os.path.join(_DATA, "portal_only_notices.json")
 
 _EMAIL_MESSAGE_FILE = "email_message.txt"
 
@@ -533,6 +534,30 @@ def preview_sent(job_id: str) -> bool:
     return isinstance(store, dict) and job_id in store
 
 
+def approved_jobs() -> List[str]:
+    """Every Job ID the user has tapped Approve on, queue drained or not."""
+    store = _read_json(JOB_DECISIONS, {})
+    decided = sorted(job_id for job_id, rec in (store or {}).items()
+                     if isinstance(rec, dict) and rec.get("decision") == "approved") \
+        if isinstance(store, dict) else []
+    return sorted(set(decided) | set(approved_queue()))
+
+
+def awaiting_email_answer() -> List[str]:
+    """Approved jobs with a staged draft and no Send/Cancel answer yet.
+
+    Whether the card was ever *delivered* is deliberately not part of this: a card
+    Telegram accepted but the user never saw (notification swallowed, chat muted,
+    phone wiped) leaves the job in precisely this state, and `--resend` exists to
+    put it back in front of them.
+    """
+    drafts = _read_json(EMAIL_DRAFTS, {})
+    if not isinstance(drafts, dict):
+        return []
+    return sorted(job_id for job_id in drafts
+                  if is_approved(job_id) and email_decision(job_id) is None)
+
+
 def pending_email_previews() -> List[str]:
     """Approved jobs whose email preview card is missing — the stall this fixes.
 
@@ -540,13 +565,19 @@ def pending_email_previews() -> List[str]:
     Send/Cancel answer yet, and has never been shown a preview card. That is exactly
     the state a job lands in when the approve tap is reconciled by a later run.
     """
-    drafts = _read_json(EMAIL_DRAFTS, {})
-    if not isinstance(drafts, dict):
-        return []
-    return sorted(job_id for job_id in drafts
-                  if is_approved(job_id)
-                  and email_decision(job_id) is None
-                  and not preview_sent(job_id))
+    return [job_id for job_id in awaiting_email_answer() if not preview_sent(job_id)]
+
+
+def approved_without_draft() -> List[str]:
+    """Approved jobs that have NO staged email draft at all.
+
+    These are invisible to `pending_email_previews()` by construction — it can only
+    iterate drafts that exist — so an approval whose draft never staged (no recruiter
+    address found, or `email_message.txt` missing when the review card went out) used
+    to vanish silently: no second card, and nothing saying why. Surfacing the list is
+    what turns that into a portal-only job the user was told about.
+    """
+    return [job_id for job_id in approved_jobs() if load_draft(job_id) is None]
 
 
 # ---------------------------------------------------------------------------
@@ -796,6 +827,41 @@ def send_email_preview_card(job: Dict[str, Any], msg: Any) -> int:
     return message_id
 
 
+def send_portal_only_notice(job: Dict[str, Any]) -> int:
+    """Tell the user an approved job has no email to preview, and why.
+
+    The second gate cannot run without a staged draft, and the old behaviour was to
+    do nothing at all — which on the phone is indistinguishable from Alfred having
+    dropped the approval. One line saying "portal only, no recruiter address" costs
+    nothing and closes the loop. Recorded like a preview card so it is said once.
+    """
+    job_id = job.get("job_id", "")
+    text = (
+        f"📋 APPROVED — {job.get('company') or 'this job'}\n"
+        f"{job.get('title') or ''}\n"
+        f"{'─' * 28}\n"
+        "No email preview for this one: there is no staged draft, which means no "
+        "recruiter address was verified or no tailored email text was written.\n\n"
+        "It stays queued as a PORTAL-ONLY application — nothing else is needed from "
+        "you here. To add the email channel, re-run the tailor stage for this job and "
+        "it will ask you again."
+    )
+    resp = _api("sendMessage", data={
+        "chat_id": _chat_id(), "text": text, "disable_web_page_preview": True})
+    message_id = resp["result"]["message_id"]
+    store = _read_json(PORTAL_NOTICES, {})
+    if not isinstance(store, dict):
+        store = {}
+    store[job_id] = {"sent_at": _now_iso(), "message_id": message_id}
+    _write_json(PORTAL_NOTICES, store)
+    return message_id
+
+
+def portal_notice_sent(job_id: str) -> bool:
+    store = _read_json(PORTAL_NOTICES, {})
+    return isinstance(store, dict) and job_id in store
+
+
 def send_edit_prompt(job: Dict[str, Any]) -> int:
     """Ask for the replacement text after an Edit tap, and arm the edit capture."""
     job_id = job.get("job_id", "")
@@ -854,9 +920,10 @@ def send_result_notice(job: Dict[str, Any], result: Dict[str, Any]) -> int:
     return resp["result"]["message_id"]
 
 
-def poll_responses(offset: Optional[int] = None,
-                   timeout: int = 0) -> Tuple[List[Dict[str, Any]], int]:
-    """Fetch updates from `offset`, parse them, apply /pause, persist the offset.
+def poll_responses(offset: Optional[int] = None, timeout: int = 0,
+                   commit: bool = True) -> Tuple[List[Dict[str, Any]], int]:
+    """Fetch updates from `offset`, parse them, apply /pause, and (by default)
+    persist the offset.
 
     Returns (events, new_offset). Callers act on the events (update Notion,
     enqueue approved). /pause is applied here so the flag is set immediately.
@@ -865,6 +932,16 @@ def poll_responses(offset: Optional[int] = None,
     already queued, and a non-zero value waits that long for a tap to arrive — the
     difference between catching a tap made during a run and making the user wait
     for the next one. Keep it below `_HTTP_TIMEOUT` so the HTTP read outlives the poll.
+
+    `commit=False` returns the events WITHOUT advancing the saved offset, so the
+    caller can persist it only after every tap has had its consequence. This is the
+    difference between a crash costing a duplicate card and a crash costing the
+    approval itself: Telegram drops an update as soon as a later offset confirms it,
+    so an offset written before dispatch turns any failure in dispatch — a dead link
+    mid-card, a SIGTERM, a bad draft — into a tap that is gone for good. That is
+    exactly the "I tapped Approve and nothing ever happened" failure. Dispatch is
+    idempotent (decisions record once, the queue de-dupes), so re-reading a tap is
+    cheap and losing one is not.
     """
     if offset is None:
         offset = load_offset()
@@ -878,7 +955,8 @@ def poll_responses(offset: Optional[int] = None,
         elif ev.get("type") == "command" and ev.get("command") == "resume":
             set_pause(False)
 
-    save_offset(new_offset)
+    if commit:
+        save_offset(new_offset)
     return events, new_offset
 
 

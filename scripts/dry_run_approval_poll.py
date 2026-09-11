@@ -53,6 +53,7 @@ def use_temp_state(td):
     tb.AWAITING_EDIT = os.path.join(td, "email_awaiting_edit.json")
     tb.JOB_DECISIONS = os.path.join(td, "job_decisions.json")
     tb.EMAIL_PREVIEWS = os.path.join(td, "email_previews.json")
+    tb.PORTAL_NOTICES = os.path.join(td, "portal_only_notices.json")
 
 
 def make_output_dir(td, subject_line=True):
@@ -258,6 +259,78 @@ try:
               any("portal only" in (s["data"].get("text") or "") for s in sent), True)
         check("no email preview card went out",
               [t for t in texts_of() if "READY TO SEND" in t], [])
+
+    print("\nA tap is only confirmed to Telegram AFTER it has had its consequence")
+    with tempfile.TemporaryDirectory() as td:
+        use_temp_state(td)
+        sent.clear()
+        updates = {"result": [{"update_id": 4100,
+                               "callback_query": {"id": "z", "data": "approve|wellfound:99"}}]}
+        tb._api = lambda m, data=None, files=None: updates
+        events, new_offset = tb.poll_responses(commit=False)
+        check("the tap was read", [e["decision"] for e in events], ["approve"])
+        check("but the offset is NOT yet advanced — a crash here replays the tap",
+              tb.load_offset(), 0)
+        tb._api = fake_api
+        ap.dispatch(events)
+        tb.save_offset(new_offset)
+        check("committed only once the approve was acted on", tb.load_offset(), 4101)
+
+    print("\nAn approved job with no draft is told so, instead of going quiet")
+    with tempfile.TemporaryDirectory() as td:
+        use_temp_state(td)
+        sent.clear()
+        tb.record_job_decision("portal:7", "approved")
+        tb.enqueue_approved("portal:7")
+        check("invisible to the old preview sweep", tb.pending_email_previews(), [])
+        check("but visible as approved-without-draft", tb.approved_without_draft(), ["portal:7"])
+        summary = ap.sweep()
+        check("a portal-only notice goes out",
+              [n["job_id"] for n in summary["notices"]], ["portal:7"])
+        check("and it says why", any("PORTAL-ONLY" in t for t in texts_of()), True)
+        sent.clear()
+        check("said once, not on every sweep", ap.sweep()["notices"], [])
+
+    print("\n--resend puts back a card Alfred sent but the user never saw")
+    with tempfile.TemporaryDirectory() as td:
+        use_temp_state(td)
+        out = make_output_dir(td)
+        job = job_for(out)
+        tb.stage_email_draft(job)
+        tb.record_job_decision(job["job_id"], "approved")
+        tb.mark_preview_sent(job["job_id"], 4242)        # Telegram took it; the phone didn't
+        sent.clear()
+        check("nothing pending — the record says it was carded",
+              tb.pending_email_previews(), [])
+        check("yet the job is still waiting for an answer",
+              tb.awaiting_email_answer(), ["wellfound:99"])
+        check("a plain sweep leaves the user stuck", ap.sweep()["previews"], [])
+        summary = ap.sweep(resend=True)
+        check("--resend sends it again", [p["preview"] for p in summary["previews"]], ["sent"])
+        check("and it is the real email preview",
+              any("READY TO SEND" in t for t in texts_of()), True)
+        tb.record_email_decision(job["job_id"], "cancelled")
+        sent.clear()
+        check("a decided email drops out of the target list entirely",
+              tb.awaiting_email_answer(), [])
+        check("so --resend never re-asks it",
+              ap.sweep(resend=True)["previews"], [])
+        check("and no card was put on the wire", texts_of(), [])
+
+    print("\nThe Notion half is emitted as a plan, since no script can write Notion")
+    with tempfile.TemporaryDirectory() as td:
+        use_temp_state(td)
+        import email_gate
+        email_gate.EMAIL_SENT = os.path.join(td, "email_sent.json")
+        tb.record_job_decision("wellfound:99", "approved")
+        tb.record_job_decision("remoteok:12", "skipped")
+        plan = {row["job_id"]: row["status"] for row in ap.notion_plan()}
+        check("approve → Approved", plan.get("wellfound:99"), "Approved")
+        check("skip → Skipped", plan.get("remoteok:12"), "Skipped")
+        email_gate.record_sent("wellfound:99", "SENT", to="hr@acme.com")
+        plan = {row["job_id"]: row["status"] for row in ap.notion_plan()}
+        check("a job whose email actually left reads Applied, not Approved",
+              plan.get("wellfound:99"), "Applied")
 
     print("\nPause still works through the same poll")
     with tempfile.TemporaryDirectory() as td:

@@ -27,6 +27,8 @@ Usage
     approval_poll.py --timeout 60          # long-poll up to 60s for an immediate tap
     approval_poll.py --send                # also send emails the user already cleared
     approval_poll.py --sweep               # only send the missing preview cards
+    approval_poll.py --resend              # re-send EVERY undecided approved job's card
+    approval_poll.py --notion-plan         # what Notion should say per job; no network
     approval_poll.py --preview <job_id>    # (re-)send one job's preview card
     approval_poll.py --stage <jobs.json>   # stage drafts from job objects OR Notion rows
                                            # (a row at "Approved" is recorded as approved,
@@ -190,22 +192,88 @@ def dispatch(events: List[Dict[str, Any]], send_emails: bool = False) -> Dict[st
     return out
 
 
-def sweep(summary: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def sweep(summary: Optional[Dict[str, Any]] = None,
+          resend: bool = False) -> Dict[str, Any]:
     """Send the preview card for every approved job that never got one.
 
     This is the self-heal for jobs already stuck: approved in a past run, Notion moved
     on, no second card. It is idempotent — a job drops out of `pending_email_previews()`
     the moment its card is sent.
+
+    `resend=True` widens the target to every approved job still awaiting a Send/Cancel
+    answer, whether or not a card was recorded as sent. A card Telegram accepted is not
+    a card the user read, and "Alfred says it sent it, my phone says otherwise" has no
+    other way out. Nothing is decided by re-showing a card, so the worst case is a
+    duplicate message.
+
+    Approved jobs with no draft at all get a one-line portal-only notice instead of a
+    preview card — they can never satisfy the second gate, and silence there reads as a
+    lost approval.
     """
     summary = summary if summary is not None else {"previews": [], "errors": []}
     summary.setdefault("previews", [])
     summary.setdefault("errors", [])
-    for job_id in tb.pending_email_previews():
+    summary.setdefault("notices", [])
+
+    targets = tb.awaiting_email_answer() if resend else tb.pending_email_previews()
+    for job_id in targets:
         try:
             summary["previews"].append(send_preview(job_id))
         except Exception as exc:  # noqa: BLE001
             summary["errors"].append({"job_id": job_id, "error": f"{type(exc).__name__}: {exc}"})
+
+    for job_id in tb.approved_without_draft():
+        if tb.portal_notice_sent(job_id) and not resend:
+            continue
+        try:
+            tb.send_portal_only_notice(tb.draft_job(job_id))
+            summary["notices"].append({"job_id": job_id, "notice": "portal-only"})
+        except Exception as exc:  # noqa: BLE001
+            summary["errors"].append({"job_id": job_id, "error": f"{type(exc).__name__}: {exc}"})
     return summary
+
+
+# ---------------------------------------------------------------------------
+# The Notion half — planned here, applied by the agent that has the connector
+# ---------------------------------------------------------------------------
+
+_STATUS_BY_DECISION = {"approved": "Approved", "skipped": "Skipped"}
+
+
+def notion_plan() -> List[Dict[str, Any]]:
+    """The Status every locally-decided job should be showing in Notion, and why.
+
+    No script in Alfred can write Notion — the connector lives in the agent host, and
+    the always-on worker has none at all. So a tap recorded on disk and a Notion row
+    still reading "Ready for Review" is the normal resting state between runs, not a
+    bug, and the fix is for the calling agent to apply this list. Emitting it on every
+    run (rather than leaving the agent to infer it from `approved`/`skipped`) is what
+    makes a backlog of days-old taps recoverable in one pass instead of only the taps
+    this particular poll happened to read.
+
+    A job whose email has actually left is reported as "Applied": the send is the fact,
+    and leaving it at "Approved" understates what already happened to the user.
+    """
+    import email_gate
+
+    store = tb._read_json(tb.JOB_DECISIONS, {})
+    if not isinstance(store, dict):
+        store = {}
+
+    plan: List[Dict[str, Any]] = []
+    for job_id in sorted(set(store) | set(tb.approved_queue())):
+        rec = store.get(job_id) if isinstance(store.get(job_id), dict) else {}
+        decision = rec.get("decision") or ("approved" if job_id in tb.approved_queue() else None)
+        status = _STATUS_BY_DECISION.get(decision or "")
+        if not status:
+            continue
+        reason = f"tapped {decision}"
+        sent = email_gate.already_sent(job_id)
+        if status == "Approved" and isinstance(sent, dict) and sent.get("status") == "SENT":
+            status, reason = "Applied", "email sent"
+        plan.append({"job_id": job_id, "status": status,
+                     "reason": reason, "decided_at": rec.get("ts")})
+    return plan
 
 
 def status() -> Dict[str, Any]:
@@ -214,11 +282,15 @@ def status() -> Dict[str, Any]:
     return {
         "paused": tb.is_paused(),
         "offset": tb.load_offset(),
+        "approved": tb.approved_jobs(),
         "approved_queue": tb.approved_queue(),
         "staged_drafts": sorted(drafts) if isinstance(drafts, dict) else [],
         "awaiting_edit": tb.get_awaiting_edit(),
         "pending_email_previews": tb.pending_email_previews(),
+        "awaiting_email_answer": tb.awaiting_email_answer(),
+        "approved_without_draft": tb.approved_without_draft(),
         "cleared_unsent": __import__("email_gate").cleared_unsent(),
+        "notion_plan": notion_plan(),
     }
 
 
@@ -297,6 +369,13 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="long-poll window in seconds (0 = take what is queued)")
     parser.add_argument("--sweep", action="store_true",
                         help="only send preview cards for approved jobs missing one")
+    parser.add_argument("--resend", action="store_true",
+                        help="re-send the preview card for EVERY approved job still "
+                             "awaiting Send/Cancel, even one already marked as carded — "
+                             "for when Alfred says it sent it and your phone disagrees")
+    parser.add_argument("--notion-plan", action="store_true",
+                        help="print the Status each decided job should be showing in "
+                             "Notion, as JSON, for the agent to apply (no network)")
     parser.add_argument("--no-sweep", action="store_true",
                         help="poll and dispatch, but skip the missing-preview sweep")
     parser.add_argument("--preview", metavar="JOB_ID",
@@ -314,6 +393,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(json.dumps(status(), indent=2))
         return 0
 
+    if args.notion_plan:
+        print(json.dumps({"notion_updates": notion_plan()}, indent=2))
+        return 0
+
     if args.stage:
         print(json.dumps(_stage_from_file(args.stage), indent=2))
         return 0
@@ -322,19 +405,26 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(json.dumps(send_preview(args.preview), indent=2))
         return 0
 
-    if args.sweep:
-        return _emit(sweep())
+    if args.sweep or args.resend:
+        summary = sweep(resend=args.resend)
+        summary["notion_updates"] = notion_plan()
+        return _emit(summary)
 
-    events, new_offset = tb.poll_responses(timeout=args.timeout)
+    # The offset is committed AFTER dispatch, not by the poll: an offset advanced
+    # first turns any failure below into a tap Telegram has already dropped, which
+    # is the approval the user never gets back.
+    events, new_offset = tb.poll_responses(timeout=args.timeout, commit=False)
     summary = dispatch(events, send_emails=args.send)
     summary["offset"] = new_offset
     summary["events"] = len(events)
+    tb.save_offset(new_offset)
     if not args.no_sweep:
-        sweep(summary)
+        sweep(summary, resend=args.resend)
     if args.send:
         import email_gate
         summary.setdefault("sends", []).extend(email_gate.send_cleared())
     summary["paused"] = tb.is_paused()
+    summary["notion_updates"] = notion_plan()
     return _emit(summary)
 
 

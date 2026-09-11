@@ -64,6 +64,31 @@ Never end a run with `approval_poll.py --status` reporting a non-empty `pending_
 that list is exactly the failure this flow exists to prevent — a job the user approved, whose Notion
 row moved, and whose phone stayed quiet. Run `--sweep` and report what went out.
 
+## Notion is yours to apply — the script cannot
+
+No Alfred script can write Notion: the connector lives in this host, and the always-on worker has
+none at all. So every run prints a **`notion_updates`** list — `{job_id, status, reason}` for every
+locally decided job, not only the taps this poll happened to read — and applying it is your job, with
+`notion-update-page`. A tap recorded on disk with the row still reading "Ready for Review" is the
+normal resting state between runs; it stops being normal the moment you finish a run without
+applying the list. `approval_poll.py --notion-plan` prints it alone, offline, when you only want to
+reconcile the board.
+
+## When the user says "I tapped Approve and nothing happened"
+
+Work these in order — they are different faults with different fixes:
+
+1. `approval_poll.py --status`. Is the job under `approved`? If not, the tap was never read —
+   nothing polls Telegram on its own, so either no run has happened since the tap or the worker is
+   down. Poll now.
+2. Is it under `approved_without_draft`? Then there is no email to preview (no verified recruiter
+   address, or no `email_message.txt` at tailor time). A sweep sends the user a portal-only notice
+   saying exactly that; re-run the tailor stage if they want the email channel.
+3. Is it under `awaiting_email_answer` but NOT `pending_email_previews`? Alfred believes the card
+   was delivered and the user disagrees. `approval_poll.py --resend` puts it back on their phone.
+   Re-showing a card decides nothing, so this is always safe.
+4. Is the row still wrong in Notion? Apply `notion_updates`. That is the step no script can do.
+
 # Decisions
 
 - **Approve** → Notion Status = "Approved"; add the job to the approved queue
