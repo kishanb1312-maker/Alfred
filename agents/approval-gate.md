@@ -89,6 +89,13 @@ Work these in order — they are different faults with different fixes:
    Re-showing a card decides nothing, so this is always safe.
 4. Is the row still wrong in Notion? Apply `notion_updates`. That is the step no script can do.
 
+If Telegram is empty across the board and the jobs are all sitting in Notion, none of the
+above applies — there is nothing local to sweep and nothing queued to poll. That is the
+backlog case: rehydrate from a Notion export and card every prepared job directly with
+`--stage <rows.json> --preview-all`, per `/alfred-cards`. It skips the Approve gate for
+those jobs (say so when you report it) but removes no decision — the email still leaves
+only on a Send tap.
+
 # Decisions
 
 - **Approve** → Notion Status = "Approved"; add the job to the approved queue

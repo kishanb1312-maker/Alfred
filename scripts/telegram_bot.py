@@ -568,6 +568,21 @@ def pending_email_previews() -> List[str]:
     return [job_id for job_id in awaiting_email_answer() if not preview_sent(job_id)]
 
 
+def undecided_drafts() -> List[str]:
+    """Every staged draft with no Send/Cancel answer — approval status ignored.
+
+    The normal flow gates the email preview behind an Approve tap, and should. This is
+    the deliberate exception: a backlog already prepared and sitting in Notion, where
+    the user has decided in bulk that they want to see each email and answer it. The
+    card still sends nothing on its own — it asks — so widening WHO gets asked costs
+    no safety, only the separation between "worth pursuing" and "send these words".
+    """
+    drafts = _read_json(EMAIL_DRAFTS, {})
+    if not isinstance(drafts, dict):
+        return []
+    return sorted(job_id for job_id in drafts if email_decision(job_id) is None)
+
+
 def approved_without_draft() -> List[str]:
     """Approved jobs that have NO staged email draft at all.
 

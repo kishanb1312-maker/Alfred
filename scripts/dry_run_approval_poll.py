@@ -332,6 +332,65 @@ try:
         check("a job whose email actually left reads Applied, not Approved",
               plan.get("wellfound:99"), "Applied")
 
+    print("\nThe backlog case: a Notion export becomes one card per job, in one command")
+    with tempfile.TemporaryDirectory() as td:
+        use_temp_state(td)
+        out = make_output_dir(td)
+        sent.clear()
+
+        # Two rows exactly as Notion returns them: one still at Ready for Review
+        # (never approved — the case the old sweep could not reach), one with no
+        # recruiter address at all.
+        import json as _json
+        import notion_schema as ns
+        rows = {"results": [
+            {"url": "https://notion.so/aaa", "properties": {
+                ns.JOB_ID: {"rich_text": [{"plain_text": "wellfound:99"}]},
+                ns.COMPANY: {"title": [{"plain_text": "Acme"}]},
+                ns.ROLE: {"rich_text": [{"plain_text": "Senior Product Designer"}]},
+                ns.HR_EMAIL: {"email": "hr@acme.com"},
+                ns.STATUS: {"select": {"name": "Ready for Review"}},
+                ns.RESUME_FILE: {"rich_text": [
+                    {"plain_text": os.path.join(out, "Resume_Acme.pdf")}]},
+                ns.COVER_LETTER_FILE: {"rich_text": [
+                    {"plain_text": os.path.join(out, "CoverLetter_Acme.pdf")}]},
+            }},
+            {"url": "https://notion.so/bbb", "properties": {
+                ns.JOB_ID: {"rich_text": [{"plain_text": "portal:7"}]},
+                ns.COMPANY: {"title": [{"plain_text": "Globex"}]},
+                ns.STATUS: {"select": {"name": "Ready for Review"}},
+            }},
+        ]}
+        rows_path = os.path.join(td, "notion_rows.json")
+        with open(rows_path, "w", encoding="utf-8") as fh:
+            _json.dump(rows, fh)
+
+        staged = ap._stage_from_file(rows_path)
+        by_id = {r["job_id"]: r for r in staged["staged"]}
+        check("the row with an address staged a draft", by_id["wellfound:99"]["staged"], True)
+        check("and kept the recruiter address", by_id["wellfound:99"]["to"], "hr@acme.com")
+        check("the row without one did not, and says why",
+              by_id["portal:7"]["reason"], "no recruiter address or no email_message.txt")
+        check("neither was silently marked approved",
+              tb.approved_jobs(), [])
+
+        check("so the normal sweep reaches nothing — this is the old dead end",
+              ap.sweep()["previews"], [])
+        summary = ap.sweep(all_jobs=True)
+        check("--preview-all cards it anyway",
+              [(p["job_id"], p["preview"]) for p in summary["previews"]],
+              [("wellfound:99", "sent")])
+        check("and it is the real email, built from the draft",
+              any("READY TO SEND" in t and "hr@acme.com" in t for t in texts_of()), True)
+        check("with the real attachments named",
+              any("Resume_Acme.pdf" in t and "CoverLetter_Acme.pdf" in t
+                  for t in texts_of()), True)
+
+        sent.clear()
+        check("answering one takes it out of the set",
+              (tb.record_email_decision("wellfound:99", "cleared"),
+               ap.sweep(all_jobs=True)["previews"])[1], [])
+
     print("\nPause still works through the same poll")
     with tempfile.TemporaryDirectory() as td:
         use_temp_state(td)

@@ -28,11 +28,15 @@ Usage
     approval_poll.py --send                # also send emails the user already cleared
     approval_poll.py --sweep               # only send the missing preview cards
     approval_poll.py --resend              # re-send EVERY undecided approved job's card
+    approval_poll.py --preview-all         # card for every staged draft, approved or not
     approval_poll.py --notion-plan         # what Notion should say per job; no network
     approval_poll.py --preview <job_id>    # (re-)send one job's preview card
     approval_poll.py --stage <jobs.json>   # stage drafts from job objects OR Notion rows
                                            # (a row at "Approved" is recorded as approved,
                                            #  so its preview card gets sent by --sweep)
+    approval_poll.py --stage rows.json --preview-all
+                                           # the backlog one-liner: rehydrate every job
+                                           # from a Notion export and card them all
     approval_poll.py --status              # print local state as JSON; no network
 
 One bad job never takes the pass down: a card that fails is caught, recorded under
@@ -193,7 +197,7 @@ def dispatch(events: List[Dict[str, Any]], send_emails: bool = False) -> Dict[st
 
 
 def sweep(summary: Optional[Dict[str, Any]] = None,
-          resend: bool = False) -> Dict[str, Any]:
+          resend: bool = False, all_jobs: bool = False) -> Dict[str, Any]:
     """Send the preview card for every approved job that never got one.
 
     This is the self-heal for jobs already stuck: approved in a past run, Notion moved
@@ -206,6 +210,13 @@ def sweep(summary: Optional[Dict[str, Any]] = None,
     other way out. Nothing is decided by re-showing a card, so the worst case is a
     duplicate message.
 
+    `all_jobs=True` drops the approval requirement entirely: every staged draft still
+    awaiting an answer gets its card. That is the bulk-backlog case — jobs already
+    prepared and sitting in Notion, where the user has decided up front that they want
+    to see each email and answer it one by one. It collapses the two gates into one for
+    those jobs, which is a real change in posture and so is never the default; a card
+    still sends no email, so the human is not skipped, only asked once instead of twice.
+
     Approved jobs with no draft at all get a one-line portal-only notice instead of a
     preview card — they can never satisfy the second gate, and silence there reads as a
     lost approval.
@@ -215,7 +226,12 @@ def sweep(summary: Optional[Dict[str, Any]] = None,
     summary.setdefault("errors", [])
     summary.setdefault("notices", [])
 
-    targets = tb.awaiting_email_answer() if resend else tb.pending_email_previews()
+    if all_jobs:
+        targets = tb.undecided_drafts()
+    elif resend:
+        targets = tb.awaiting_email_answer()
+    else:
+        targets = tb.pending_email_previews()
     for job_id in targets:
         try:
             summary["previews"].append(send_preview(job_id))
@@ -289,6 +305,7 @@ def status() -> Dict[str, Any]:
         "pending_email_previews": tb.pending_email_previews(),
         "awaiting_email_answer": tb.awaiting_email_answer(),
         "approved_without_draft": tb.approved_without_draft(),
+        "undecided_drafts": tb.undecided_drafts(),
         "cleared_unsent": __import__("email_gate").cleared_unsent(),
         "notion_plan": notion_plan(),
     }
@@ -373,6 +390,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="re-send the preview card for EVERY approved job still "
                              "awaiting Send/Cancel, even one already marked as carded — "
                              "for when Alfred says it sent it and your phone disagrees")
+    parser.add_argument("--preview-all", action="store_true",
+                        help="send the email preview card for EVERY staged draft still "
+                             "awaiting an answer, approved or not — the bulk backlog "
+                             "case, for jobs already prepared and sitting in Notion")
     parser.add_argument("--notion-plan", action="store_true",
                         help="print the Status each decided job should be showing in "
                              "Notion, as JSON, for the agent to apply (no network)")
@@ -398,15 +419,24 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     if args.stage:
-        print(json.dumps(_stage_from_file(args.stage), indent=2))
-        return 0
+        staged = _stage_from_file(args.stage)
+        if not (args.preview_all or args.sweep or args.resend):
+            print(json.dumps(staged, indent=2))
+            return 0
+        # Staging and carding in one invocation: the two-command version leaves a
+        # window where the drafts exist and the user's phone still shows nothing,
+        # and that window is exactly where this flow keeps getting stuck.
+        summary = sweep(resend=args.resend, all_jobs=args.preview_all)
+        summary["staged"] = staged["staged"]
+        summary["notion_updates"] = notion_plan()
+        return _emit(summary)
 
     if args.preview:
         print(json.dumps(send_preview(args.preview), indent=2))
         return 0
 
-    if args.sweep or args.resend:
-        summary = sweep(resend=args.resend)
+    if args.sweep or args.resend or args.preview_all:
+        summary = sweep(resend=args.resend, all_jobs=args.preview_all)
         summary["notion_updates"] = notion_plan()
         return _emit(summary)
 
