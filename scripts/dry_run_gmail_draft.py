@@ -125,6 +125,31 @@ try:
         check("a cancelled email drops out of the target set",
               ap.draft_all()["drafts"], [])
 
+    print("\nA job already applied to is never drafted again")
+    with tempfile.TemporaryDirectory() as td:
+        use_temp_state(td)
+        appended.clear()
+        import email_gate, notion_schema as ns, json as _json
+        email_gate.EMAIL_SENT = os.path.join(td, "email_sent.json")
+        tb.stage_email_draft(make_job(td))
+        email_gate.record_sent("acme:1", "SENT", to="hr@acme.com")
+        rec = ap.draft_to_gmail("acme:1")
+        check("skipped", rec["draft"], "skipped")
+        check("and names when it went", "already sent to hr@acme.com" in rec["reason"], True)
+        check("nothing appended", len(appended), 0)
+
+        rows = {"results": [{"url": "https://notion.so/x", "properties": {
+            ns.JOB_ID: {"rich_text": [{"plain_text": "bolna:1"}]},
+            ns.COMPANY: {"title": [{"plain_text": "Bolna AI"}]},
+            ns.HR_EMAIL: {"email": "hello@bolna.ai"},
+            ns.STATUS: {"select": {"name": "Applied"}}}}]}
+        rp = os.path.join(td, "rows.json")
+        with open(rp, "w", encoding="utf-8") as fh:
+            _json.dump(rows, fh)
+        out = ap._stage_from_file(rp)["staged"][0]
+        check("a row Notion marks Applied is not staged at all", out["staged"], False)
+        check("and says so", out["reason"], "Notion says Applied — not re-staged")
+
     print("\nAn IMAP failure is reported, never raised")
     with tempfile.TemporaryDirectory() as td:
         use_temp_state(td)

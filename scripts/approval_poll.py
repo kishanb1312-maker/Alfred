@@ -110,6 +110,11 @@ def draft_to_gmail(job_id: str, force: bool = False) -> Dict[str, Any]:
         return {"job_id": job_id, "draft": "skipped", "reason": "no staged email draft"}
     if tb.gmail_drafted(job_id) and not force:
         return {"job_id": job_id, "draft": "skipped", "reason": "already in Gmail Drafts"}
+    import email_gate
+    sent = email_gate.already_sent(job_id)
+    if isinstance(sent, dict) and sent.get("status") == "SENT" and not force:
+        return {"job_id": job_id, "draft": "skipped",
+                "reason": f"email already sent to {sent.get('to')} on {sent.get('ts')}"}
 
     all_files = draft.get("attachments") or []
     resume = email_send.resume_only(all_files)
@@ -416,7 +421,23 @@ def _stage_from_file(path: str) -> Dict[str, Any]:
             staged.append({"job_id": None, "staged": False, "reason": "no Job ID"})
             continue
 
-        approved = str(job.get("status") or "").strip().lower() == "approved"
+        status = str(job.get("status") or "").strip().lower()
+        if status == "applied":
+            # Already done. Staging it would put a second application in front of the
+            # user, and the whole cost of that lands on a company that already heard
+            # from them. Notion's Status is the durable record of what has gone out,
+            # so it is the one that gets to veto here.
+            #
+            # Only Status. The row's "Cold Emailed" checkbox looks like the better
+            # signal and is not: `notion_schema._resolve_email` derives it from
+            # whether an address was FOUND, so it reads true for every job with a
+            # recruiter address whether or not anything was ever sent. Trusting it
+            # would silently refuse to stage most of the board.
+            staged.append({"job_id": job_id, "staged": False, "approved": False,
+                           "reason": "Notion says Applied — not re-staged"})
+            continue
+
+        approved = status == "approved"
         if approved:
             tb.record_job_decision(job_id, "approved")
             tb.enqueue_approved(job_id)
