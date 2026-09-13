@@ -29,6 +29,9 @@ Usage
     approval_poll.py --sweep               # only send the missing preview cards
     approval_poll.py --resend              # re-send EVERY undecided approved job's card
     approval_poll.py --preview-all         # card for every staged draft, approved or not
+    approval_poll.py --draft               # write them into Gmail Drafts instead
+    approval_poll.py --stage rows.json --draft
+                                           # Notion export -> one Gmail draft per job
     approval_poll.py --notion-plan         # what Notion should say per job; no network
     approval_poll.py --preview <job_id>    # (re-)send one job's preview card
     approval_poll.py --stage <jobs.json>   # stage drafts from job objects OR Notion rows
@@ -90,6 +93,72 @@ def send_preview(job_id: str, job: Optional[Dict[str, Any]] = None) -> Dict[str,
     message_id = tb.send_email_preview_card(job or tb.draft_job(job_id), msg)
     return {"job_id": job_id, "preview": "sent", "message_id": message_id,
             "to": draft.get("to")}
+
+
+def draft_to_gmail(job_id: str, force: bool = False) -> Dict[str, Any]:
+    """Put one job's email into the user's Gmail Drafts folder, resume attached.
+
+    The cover letter is deliberately left off: the user asked for the resume alone,
+    and a draft that quietly carries a second PDF is one they have to notice and
+    remove before sending. A job whose resume PDF is missing is reported as such and
+    drafted anyway — an email with no attachment is still worth having in front of
+    them, as long as they are told it is bare rather than discovering it after it has
+    gone to the company.
+    """
+    draft = tb.load_draft(job_id)
+    if draft is None:
+        return {"job_id": job_id, "draft": "skipped", "reason": "no staged email draft"}
+    if tb.gmail_drafted(job_id) and not force:
+        return {"job_id": job_id, "draft": "skipped", "reason": "already in Gmail Drafts"}
+
+    all_files = draft.get("attachments") or []
+    resume = email_send.resume_only(all_files)
+    msg = email_send.build_message(
+        to=draft.get("to", ""),
+        subject=draft.get("subject", ""),
+        body=draft.get("body", ""),
+        attachments=resume,
+    )
+    result = email_send.save_draft_safe(msg)
+
+    record: Dict[str, Any] = {
+        "job_id": job_id,
+        "draft": "created" if result.get("status") == "DRAFTED" else "failed",
+        "status": result.get("status"),
+        "to": result.get("to"),
+        "subject": result.get("subject"),
+        "attachments": result.get("attachments"),
+    }
+    if not resume:
+        record["warning"] = ("no Resume_*.pdf found — drafted with no attachment; "
+                             "attach it in Gmail before sending")
+    if result.get("status") == "DRAFTED":
+        tb.mark_gmail_drafted(job_id, result.get("folder"))
+    else:
+        record["error"] = result.get("error") or result.get("reason")
+    return record
+
+
+def draft_all(summary: Optional[Dict[str, Any]] = None,
+              force: bool = False) -> Dict[str, Any]:
+    """Draft every staged job that has no Send/Cancel answer yet.
+
+    Approval status is not consulted, for the same reason `--preview-all` ignores it:
+    a draft asks rather than acts, and the whole point here is the prepared backlog.
+    """
+    summary = summary if summary is not None else {}
+    summary.setdefault("drafts", [])
+    summary.setdefault("errors", [])
+    for job_id in tb.undecided_drafts():
+        try:
+            record = draft_to_gmail(job_id, force=force)
+            summary["drafts"].append(record)
+            if record.get("draft") == "failed":
+                summary["errors"].append({"job_id": job_id, "error": record.get("error")})
+        except Exception as exc:  # noqa: BLE001 one bad job never ends the pass
+            summary["errors"].append({"job_id": job_id,
+                                      "error": f"{type(exc).__name__}: {exc}"})
+    return summary
 
 
 def _ack(callback_query_id: Optional[str], text: str) -> None:
@@ -306,6 +375,7 @@ def status() -> Dict[str, Any]:
         "awaiting_email_answer": tb.awaiting_email_answer(),
         "approved_without_draft": tb.approved_without_draft(),
         "undecided_drafts": tb.undecided_drafts(),
+        "in_gmail_drafts": sorted(tb._read_json(tb.GMAIL_DRAFTS, {}) or {}),
         "cleared_unsent": __import__("email_gate").cleared_unsent(),
         "notion_plan": notion_plan(),
     }
@@ -394,6 +464,13 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="send the email preview card for EVERY staged draft still "
                              "awaiting an answer, approved or not — the bulk backlog "
                              "case, for jobs already prepared and sitting in Notion")
+    parser.add_argument("--draft", action="store_true",
+                        help="write each staged email into the user's Gmail Drafts "
+                             "folder (resume attached, cover letter omitted) instead "
+                             "of sending a Telegram card. Sends nothing.")
+    parser.add_argument("--redraft", action="store_true",
+                        help="with --draft, draft again even for jobs already recorded "
+                             "as drafted (makes a second copy in Gmail)")
     parser.add_argument("--notion-plan", action="store_true",
                         help="print the Status each decided job should be showing in "
                              "Notion, as JSON, for the agent to apply (no network)")
@@ -420,9 +497,14 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.stage:
         staged = _stage_from_file(args.stage)
-        if not (args.preview_all or args.sweep or args.resend):
+        if not (args.preview_all or args.sweep or args.resend or args.draft):
             print(json.dumps(staged, indent=2))
             return 0
+        if args.draft:
+            summary = draft_all(force=args.redraft)
+            summary["staged"] = staged["staged"]
+            summary["notion_updates"] = notion_plan()
+            return _emit(summary)
         # Staging and carding in one invocation: the two-command version leaves a
         # window where the drafts exist and the user's phone still shows nothing,
         # and that window is exactly where this flow keeps getting stuck.
@@ -434,6 +516,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.preview:
         print(json.dumps(send_preview(args.preview), indent=2))
         return 0
+
+    if args.draft:
+        summary = draft_all(force=args.redraft)
+        summary["notion_updates"] = notion_plan()
+        return _emit(summary)
 
     if args.sweep or args.resend or args.preview_all:
         summary = sweep(resend=args.resend, all_jobs=args.preview_all)

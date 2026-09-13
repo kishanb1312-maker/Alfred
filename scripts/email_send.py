@@ -23,6 +23,13 @@ from typing import Any, Dict, List, Optional
 
 _SMTP_HOST = "smtp.gmail.com"
 _SMTP_SSL_PORT = 465
+_IMAP_HOST = "imap.gmail.com"
+_IMAP_SSL_PORT = 993
+
+# Gmail localises the Drafts folder ("[Gmail]/Drafts" in English, "[Google Mail]/…"
+# on older UK accounts, translated elsewhere), so the name is discovered from the
+# server's \Drafts special-use flag and these are only the fallback guesses.
+_DRAFT_FOLDER_FALLBACKS = ("[Gmail]/Drafts", "[Google Mail]/Drafts", "Drafts")
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +80,23 @@ def build_message(to: str, subject: str, body: str,
             msg.add_attachment(fh.read(), maintype=maintype, subtype=subtype,
                               filename=os.path.basename(path))
     return msg
+
+
+def resume_only(paths: Optional[List[str]]) -> List[str]:
+    """Just the resume out of a job's attachment list.
+
+    Alfred names tailored files `Resume_<Company>.pdf` and
+    `CoverLetter_<Company>.pdf` — the same convention `telegram_bot.draft_attachments`
+    globs for — so the resume is identified by name rather than by position. Position
+    would be wrong exactly when it matters: a job whose resume failed to build leaves
+    the cover letter at index 0, and "attach the first file" would then attach the
+    cover letter to an email the user asked to carry a resume.
+
+    Returns an empty list when no file matches. That is deliberate: a caller that
+    wanted a resume and got none should report it, not quietly attach something else.
+    """
+    return [p for p in (paths or [])
+            if os.path.basename(p).lower().startswith("resume")]
 
 
 def attached_filenames(msg: EmailMessage) -> List[str]:
@@ -135,6 +159,110 @@ def send_safe(msg: EmailMessage, dry_run: bool = True) -> Dict[str, Any]:
     """
     try:
         return send(msg, dry_run=dry_run)
+    except Exception as exc:  # noqa: BLE001 — every failure mode is reportable
+        return {
+            "status": "FAILED",
+            "error": f"{type(exc).__name__}: {exc}",
+            "to": msg["To"],
+            "subject": msg["Subject"],
+            "attachments": attached_filenames(msg),
+        }
+
+
+# ---------------------------------------------------------------------------
+# Drafts (network chokepoint — monkeypatched in the dry-run)
+#
+# Why IMAP rather than the Gmail API: the user already has GMAIL_ADDRESS and
+# GMAIL_APP_PASSWORD in their .env for SMTP, and IMAP APPEND takes exactly the
+# same credentials. The API route would mean an OAuth client, a consent screen and
+# a second secret to store, to land the same message in the same folder.
+# ---------------------------------------------------------------------------
+
+def _imap_draft_folder(imap: Any) -> str:
+    """The mailbox flagged \\Drafts on this account, else a fallback guess.
+
+    Asking the server beats hardcoding "[Gmail]/Drafts": that string is localised,
+    and appending to a folder that does not exist creates a stray top-level one
+    rather than failing loudly.
+    """
+    try:
+        typ, data = imap.list()
+        if typ == "OK":
+            for raw in data or []:
+                line = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
+                if "\\Drafts" in line:
+                    return line.rsplit(' "/" ', 1)[-1].strip().strip('"')
+    except Exception:  # noqa: BLE001 — discovery is best effort; fallbacks follow
+        pass
+    return _DRAFT_FOLDER_FALLBACKS[0]
+
+
+def _imap_append(msg: EmailMessage) -> str:
+    """The ONLY function that opens an IMAP connection. Returns the folder used.
+
+    Reads credentials from env at call time; never logs the password.
+    """
+    import imaplib
+    import time
+
+    address = _gmail_address()
+    password = _gmail_app_password()
+    imap = imaplib.IMAP4_SSL(_IMAP_HOST, _IMAP_SSL_PORT)
+    try:
+        imap.login(address, password)
+        folder = _imap_draft_folder(imap)
+        typ, data = imap.append(f'"{folder}"', "\\Draft",
+                                imaplib.Time2Internaldate(time.time()),
+                                msg.as_bytes())
+        if typ != "OK":
+            raise RuntimeError(f"IMAP APPEND to {folder!r} failed: {typ} {data!r}")
+        return folder
+    finally:
+        try:
+            imap.logout()
+        except Exception:  # noqa: BLE001 — a failed logout must not mask the result
+            pass
+
+
+def save_draft(msg: EmailMessage) -> Dict[str, Any]:
+    """Put `msg` in the user's Gmail Drafts folder. Returns a result record.
+
+    **Deliberately not gated by `dry_run`.** That flag means "simulate, never send",
+    and a draft is not a send: it lands in the user's own mailbox, reaches no
+    company, and is deleted with one click. Gating it would make the feature
+    useless for exactly the users the flag protects — the ones who, correctly, keep
+    dry_run on while they build trust in the pipeline. The send path is untouched
+    and keeps every guardrail.
+
+    `/pause` IS honoured. Pause means the user wants Alfred to stop doing things,
+    and quietly filling their Drafts folder while they think it is stopped is the
+    kind of surprise the flag exists to prevent.
+    """
+    summary = {
+        "to": msg["To"],
+        "subject": msg["Subject"],
+        "attachments": attached_filenames(msg),
+        "size_bytes": len(msg.as_bytes()),
+    }
+
+    import telegram_bot as tb  # local import: keeps the module importable without it
+    if tb.is_paused():
+        return {"status": "PAUSED",
+                "reason": "/pause is set — no drafts written; send /resume to Alfred",
+                **summary}
+
+    folder = _imap_append(msg)
+    return {"status": "DRAFTED", "folder": folder, **summary}
+
+
+def save_draft_safe(msg: EmailMessage) -> Dict[str, Any]:
+    """`save_draft`, but an IMAP failure becomes a FAILED result, not an exception.
+
+    One unreachable mailbox, one rejected login, one oversized attachment must not
+    end the pass and leave the remaining jobs undrafted with no explanation.
+    """
+    try:
+        return save_draft(msg)
     except Exception as exc:  # noqa: BLE001 — every failure mode is reportable
         return {
             "status": "FAILED",

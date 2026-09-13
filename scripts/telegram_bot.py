@@ -474,6 +474,7 @@ def clear_awaiting_edit() -> None:
 JOB_DECISIONS = os.path.join(_DATA, "job_decisions.json")
 EMAIL_PREVIEWS = os.path.join(_DATA, "email_previews.json")
 PORTAL_NOTICES = os.path.join(_DATA, "portal_only_notices.json")
+GMAIL_DRAFTS = os.path.join(_DATA, "gmail_drafts.json")
 
 _EMAIL_MESSAGE_FILE = "email_message.txt"
 
@@ -581,6 +582,24 @@ def undecided_drafts() -> List[str]:
     if not isinstance(drafts, dict):
         return []
     return sorted(job_id for job_id in drafts if email_decision(job_id) is None)
+
+
+def mark_gmail_drafted(job_id: str, folder: Optional[str] = None) -> None:
+    """Remember that this job's email is sitting in the user's Gmail Drafts.
+
+    Without it, a second `--draft` run writes a second copy of all nineteen emails
+    into the folder and the user has to work out which of each pair they edited.
+    """
+    store = _read_json(GMAIL_DRAFTS, {})
+    if not isinstance(store, dict):
+        store = {}
+    store[job_id] = {"drafted_at": _now_iso(), "folder": folder}
+    _write_json(GMAIL_DRAFTS, store)
+
+
+def gmail_drafted(job_id: str) -> bool:
+    store = _read_json(GMAIL_DRAFTS, {})
+    return isinstance(store, dict) and job_id in store
 
 
 def approved_without_draft() -> List[str]:
