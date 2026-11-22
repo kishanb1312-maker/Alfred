@@ -1,163 +1,105 @@
 # Alfred
 
-A **Claude-Code-native** job-application assistant that leads with **warm, direct-to-recruiter
-outreach** over spray-and-pray. It finds IT jobs, researches the
-company, tailors your resume & cover letter **truthfully** (your format and projects stay
-locked — only wording is adjusted), tracks everything in **Notion**, and applies via the
-job portal or a **direct recruiter email** — but only **after you approve each one on Telegram**.
+A **Claude-Code-native** job-application assistant, now running on the
+[career-ops](https://github.com/career-ops-hq/career-ops) engine.
 
-> Built for a friends circle, not sold as a product. There is **no Claude API key and no
-> per-token bill** — your own **Claude Code session is the brain**. You run it manually when
-> you're job-hunting.
+Alfred finds jobs (its own boards, career-ops's 150+ ATS scanner, and LinkedIn / Indeed /
+Wellfound through your signed-in browser), drops postings that are closed or look like ghost jobs,
+scores every real one with career-ops's A–H report, tailors a fact-checked CV, keeps everything in
+a local tracker, and applies through **Aside** — but only to jobs **you approve**.
 
-See [`SPEC.md`](SPEC.md) for the full design.
+> Built for a friends circle. No Claude API key and no per-token bill: your own Claude Code
+> session is the brain.
 
----
+## How a run works
 
-## How it works
+1. **Find** — zero-token sources first (RemoteOK, We Work Remotely, Jobspresso, Greenhouse/Lever,
+   and career-ops `scan.mjs` across Greenhouse, Lever, Ashby, Workday, SmartRecruiters, Keka,
+   Darwinbox, Zoho Recruit and 150+ more), then LinkedIn Easy Apply, LinkedIn "we're hiring"
+   posts, Indeed and Wellfound through Aside.
+2. **Verify** — aggregator listings are confirmed on the employer's own ATS; postings are checked
+   live; roles re-listed again and again are flagged.
+3. **Evaluate** — career-ops triage, then the full A–H report (role summary, CV match with
+   requirement weights, level strategy, pay research, customization plan, interview plan, posting
+   legitimacy) with a **1–5 score**. Below 4.0 is not recommended.
+4. **Contacts** — Alfred's verified email waterfall (careers page → Hunter/Apollo → recruiter via
+   Aside → one MX-checked guess).
+5. **CV** — career-ops tailors `cv.md` into an ATS-friendly PDF and its fact gate blocks any claim
+   that is not in your own files. No cover letters.
+6. **You review** — `/alfred:alfred-approve` (or `alfred review` / `alfred approve <id>` in a
+   terminal). Approving a job approves the application; its cold email needs its own yes.
+7. **Apply** — Aside fills the form in your own browser (LinkedIn Easy Apply and every ATS
+   career-ops supports) and submits it when `apply.auto_submit: true`. Cleared emails go out
+   through your Gmail. Marked **Applied** only with the site's confirmation.
 
-- Your **Claude Code session** orchestrates a set of **subagents** in [`agents/`](agents).
-- **External services** (Notion, LinkedIn/Easy Apply, Telegram, email) are reached through
-  **MCP tools** in Claude Code.
-- **Deterministic helpers** (DOCX→PDF, email verification, applied-history, match scoring)
-  are small **Python scripts** in [`scripts/`](scripts) run via Bash.
-- Nothing is submitted or emailed without your **explicit Telegram approval**.
+Then: follow-ups, reply classification, interview prep and practice, offer review, and learning
+from results — all career-ops modes, run from Alfred (see [`RUNBOOK.md`](RUNBOOK.md)).
 
----
-
-## Setup (each user, on their own machine)
-
-Alfred installs as a **Claude Code plugin** — no cloning, no manual `cp`, no `.env` editing.
+## Setup
 
 ```
 /plugin marketplace add kishanb1312-maker/Alfred
 /plugin install alfred@alfred
-/alfred-setup      # first-run wizard (guided, conversational)
-/alfred-run        # run the pipeline (keep dry_run: true for the first pass)
+/alfred:alfred-setup
 ```
 
-> **Runs natively on Windows, macOS, and Linux — no WSL or Ubuntu needed on Windows.**
-> All you need first is **Claude Code** and **Python 3.8+** (on Windows, install from
-> [python.org](https://www.python.org/downloads/) and tick *"Add python.exe to PATH"*). The setup wizard
-> does the rest with one cross-platform command (`alfred bootstrap`) — it builds the virtualenv,
-> installs dependencies, and creates your data folder the same way on every OS. LibreOffice (optional, for
-> PDF export) installs via `winget install TheDocumentFoundation.LibreOffice` on Windows.
+You need **Python 3.8+**, **Node.js 22.13+**, **git**, and **[Aside](https://aside.com)** for the
+browser parts. The wizard:
 
-`/alfred-setup` walks you through everything: it creates a venv and installs deps, initializes
-`~/.alfred/`, ingests your **master resume** (ATS-simple `.docx`), and collects your search +
-screening answers **in chat**. Your data lives in `~/.alfred/` (override with `ALFRED_HOME`);
-the plugin code stays read-only and updates with the plugin.
+- builds the venv (`alfred bootstrap`);
+- installs career-ops at a pinned commit, its npm packages and a headless Chromium
+  (`alfred careerops-install`);
+- turns your resume `.docx` into `cv.md` (`alfred cv-from-docx`) — reorganized, never invented;
+- writes the career-ops profile and portal list (`alfred careerops-onboard`) and personalizes
+  the archetypes the scores are measured against;
+- collects your search and screening answers in chat;
+- has you enter Gmail secrets in **your own terminal** with `alfred set-secret` (never in chat);
+- runs `alfred doctor` until it is green.
 
-> **Secrets are never typed into chat.** The wizard has you run `alfred set-secret <KEY>` in your
-> **own terminal** (hidden `getpass` prompt) — Claude never sees a token or password. Non-secret
-> config (roles, locations, screening answers) *is* collected conversationally.
+Your data lives in `~/.alfred/` (or `$ALFRED_HOME`). career-ops's code lives in
+`~/.alfred/vendor/career-ops`; its user files (`cv.md`, `config/profile.yml`, `portals.yml`,
+`data/applications.md`, `reports/`) sit in the same home, so both share one folder.
 
-### How each service is connected
+## Commands
 
-**Channel A — secrets in `~/.alfred/.env`** (set via `alfred set-secret`, never in chat):
-
-| Service | What you do | Keys |
-|---|---|---|
-| **Telegram** | Create a bot in `@BotFather` (~2 min) → name it **Alfred** → copy the token. Message the bot once, then run `alfred detect-telegram-chat-id`. **Not MCP** — the app calls the Bot API over HTTP with this token. | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` |
-| **Google / Gmail** | Use a **dedicated** job-hunt Gmail. Enable 2-Step Verification → create an **App Password** for "Mail". **Not OAuth, not MCP** — the app sends via SMTP with this app password. | `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` |
-| **Email finder** *(optional)* | Sign up for Hunter.io (free tier) or Apollo → copy the API key. | `HUNTER_API_KEY` *or* `APOLLO_API_KEY` |
-
-A minimal working setup is the **4 required keys** — and `TELEGRAM_CHAT_ID` auto-fills — so it's
-effectively **3 `set-secret` runs + messaging the bot once**.
-
-**Channel B — MCP connectors** (authorized in Claude Code, no `.env`):
-
-| Service | What you do |
+| Command | Does |
 |---|---|
-| **Notion** | Connect the **Notion** connector in Claude Code (`/mcp` or connector settings). OAuth is per-user; the plugin only *declares* it. The tracker agent then uses the `notion-*` MCP tools. |
-| **Browser sources** *(optional)* | Wellfound, Indeed and LinkedIn have no API — Alfred reads them through a browser carrying your **signed-in session**, using whichever your AI app provides: its **own built-in browser** first, else **Playwright MCP** (or any browser MCP) pointed at your existing profile. Just stay signed in to those sites there. **No password is ever stored.** No browser available? Those sources are skipped with a note and the API/RSS sources still run. |
+| `/alfred:alfred-run` | the whole pipeline, up to your review |
+| `/alfred:alfred-find` · `-verify` · `-evaluate` · `-cv` | one stage at a time |
+| `/alfred:alfred-approve` | review and decide |
+| `/alfred:alfred-apply` | apply to approved jobs |
+| `/alfred:alfred-tracker` | where every application stands |
+| `/alfred:alfred-followup` | follow-ups, replies, outcomes |
+| `/alfred:alfred-interview` | prep, plan, practice, debrief, red flags |
+| `/alfred:alfred-offer` | offer walk-through, comparison, negotiation |
+| `/alfred:alfred-learn` | patterns, calibration, skill gaps, titles |
+| `/alfred:alfred-mode <mode>` | any other career-ops mode |
+| `/alfred:alfred-status` | doctor + tracker funnel + what is waiting |
+| `/alfred:alfred-setup` | first-run wizard |
 
-> **Each user must create their OWN Telegram bot — do not share one.** The bot token is a master
-> secret, and the approval-gate polls `getUpdates` with a saved offset that **consumes** updates.
-> Telegram has one update queue per bot, so a shared bot would deliver one person's Approve/Skip tap to
-> someone else's machine, breaking the human-in-the-loop safety model. Creating a bot is ~2 min in
-> `@BotFather`; the wizard auto-detects your chat ID afterward.
+Terminal: `alfred review`, `alfred approve <id> [--email]`, `alfred skip <id>`, `alfred queue`,
+`alfred pause`, `alfred resume`, `alfred doctor`.
 
-> **Naming your bot.** BotFather asks for two different things. The **display name** is what you
-> see at the top of the chat — call it **Alfred**; duplicates are fine, so everyone's bot can be
-> "Alfred". The **@username** must be globally unique and end in `bot`, so plain `@alfred` is long
-> gone — use something like `@alfred_yourname_bot`. Only the display name is the bot's "name"; the
-> username is just its address, and neither one appears anywhere in this repo.
->
-> Already made a bot under the old name? Rename it in place — message `@BotFather`, send `/setname`,
-> pick the bot, type `Alfred`. Your token and chat ID don't change, so nothing in `.env` needs
-> touching. (`/setusername` changes the address too, if you care.)
+## Safety
 
----
+- **dry_run** (`config/search.yaml`) — everything is prepared, nothing is submitted or sent.
+- **Your approval** is required for every application, and separately for every cold email.
+- **Truthful CVs** — career-ops's fact gate blocks numbers and claims not in `cv.md`.
+- **Aside never logs in, never solves a CAPTCHA, never auto-DMs** on LinkedIn.
+- **Caps and pacing** limit how many applications and emails go out per day.
+- **No secrets in git** — `.env`, `data/`, `cv.md`, the profiles, reports and `vendor/` are ignored.
 
-## Running
+## Tests
 
-Run the whole pipeline with **`/alfred-run`** (or just say **"run Alfred"**). It follows
-[`RUNBOOK.md`](RUNBOOK.md) — reconcile → find → research → tailor → track → approve → apply → report —
-invoking the six worker subagents in [`agents/`](agents), gated on a preflight check first.
-
-Check readiness anytime with **`/alfred-status`** (runs `alfred doctor` + a run summary): it
-confirms your config, resume, and required secrets are in place and reports whether **dry_run** is on and
-whether **/pause** is set. Keep **`dry_run: true`** until you've watched a full pass.
-
-Run a single stage manually with **`/alfred-find`**, **`-research`**, **`-tailor`**, **`-track`**,
-**`-approve`**, or **`-apply`** — each still honors `dry_run`, `/pause`, and daily caps. Use `/loop` to
-repeat a run while the session stays open.
-
-**`/alfred-backfill`** recovers a backlog: jobs already tailored and tracked in Notion whose email
-was never put in front of you get their draft staged and their Send/Edit/Cancel card sent — no
-re-running the pipeline, and no new jobs found. It sends no email; it asks.
-
-Telegram commands: **✅ Approve** / **⏭️ Skip** per job, then **📧 Send** / **✏️ Edit** / **🚫 Cancel**
-on the email preview, and **/pause** to halt all sending.
-
-Want those cards to reach you with the laptop shut? Run the always-on worker — **`deploy/README.md`**.
-
-See [`RUNBOOK.md`](RUNBOOK.md) for the full step-by-step sequence and the canonical job-object
-data contract.
-
----
-
-## Safety & guardrails
-
-- **Truthful tailoring** — the agent only re-emphasizes experience already in your resume;
-  it never invents skills or claims.
-- **Format lock** — your layout, projects, and structure are never altered.
-- **Human-in-the-loop** — you approve every application; the risky final click on ban-prone
-  portals (LinkedIn, Workday) stays with you.
-- **No secrets in git** — `.env`, `data/`, and your real `config/*.yaml` are gitignored.
-
----
-
-## Repo layout
-
-```
-.claude-plugin/   plugin.json + marketplace.json (plugin & marketplace manifests)
-agents/           Claude Code subagent definitions (the six workers)
-commands/         slash-command triggers (/alfred-run, /alfred-setup, per-stage …)
-skills/           onboarding wizard (alfred-onboarding)
-scripts/          deterministic Python helpers + the `alfred` CLI (run via Bash)
-deploy/           run the always-on worker so Telegram works with your laptop off
-config/           example search + screening config (committed; your real ones live in ~/.alfred)
-.mcp.json         declares the Notion connector (OAuth per-user; no credentials)
-SPEC.md           full design spec
-
-~/.alfred/     YOUR data (config, resume, output, .env) — outside the repo, per user
+```bash
+./.venv/bin/python scripts/run_tests.py
 ```
 
----
+Runs every offline suite (no network, no real sends, no real history writes) and, when career-ops
+is installed, its own self-tests for the fact gate and the repost detector.
 
-## Upgrading from WarmApply
+## Credits
 
-Alfred was previously called **WarmApply**. If you installed before the rename, nothing
-breaks — path resolution still falls back to `$WARMAPPLY_HOME` and `~/.warmapply`, so an
-existing install keeps reading and writing exactly where it always did.
-
-To move onto the new name at your leisure:
-
-```
-mv ~/.warmapply ~/.alfred          # Windows: move %USERPROFILE%\.warmapply %USERPROFILE%\.alfred
-```
-
-If you had exported `WARMAPPLY_HOME`, rename it to `ALFRED_HOME`. The slash commands are now
-`/alfred-run`, `/alfred-setup`, etc., and the CLI is `alfred` instead of `warmapply`.
+The evaluation, scanning, liveness, CV, fact-check, tracker, follow-up, interview, offer and
+pattern features are [career-ops](https://github.com/career-ops-hq/career-ops) by Santiago
+Fernández de Valderrama and contributors (MIT). Alfred calls it unmodified, from a pinned commit.

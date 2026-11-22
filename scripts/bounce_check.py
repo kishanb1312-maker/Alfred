@@ -4,7 +4,7 @@ Dual-channel outreach cold-emails every company, including single best-guess
 addresses the user accepted the bounce risk for. To protect their Gmail, after a
 run we check the sending inbox for bounce-backs (mailer-daemon) and, if a run
 bounces too hard, **auto-pause the EMAIL channel only** (portal applications keep
-going) and warn the user on Telegram. This never lowers the user's chosen cap — it
+going) and warn the user in the run report. This never lowers the user's chosen cap — it
 only halts a bounce-storm.
 
 Channel-specific pause: this sets `data/email_paused.flag` (distinct from the global
@@ -97,7 +97,7 @@ def evaluate_throttle(sent_count: int, bounce_count: int, *,
 
 
 def throttle_warning(evaluation: Dict[str, Any]) -> str:
-    """Telegram warning text when the throttle trips."""
+    """Warning text for the run report when the throttle trips."""
     return (
         "⚠️ Alfred auto-paused the EMAIL channel: " + evaluation["reason"] + ".\n"
         "Cold emails are halted to protect your Gmail — portal applications continue.\n"

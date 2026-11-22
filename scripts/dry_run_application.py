@@ -7,14 +7,18 @@ best-guess addresses (the user accepted the bounce risk). NOTHING is sent/submit
   - email_send._smtp_send (the ONLY SMTP chokepoint) is monkeypatched to RAISE.
   - bounce_check._fetch_bounce_messages (the ONLY IMAP call) is never invoked —
     bounce messages are injected.
-  - GMAIL_APP_PASSWORD is unset; the portal is only ever "fill + hand to human".
+  - GMAIL_APP_PASSWORD is unset; the portal action comes from the REAL
+    apply_policy.submit_mode (dry_run → stop before Submit; approved + auto_submit
+    → submit; not approved → refuse), and no browser is ever driven.
 
 Scenarios:
   1. normal, dry_run=True  → both channels act; guessed email still queued; caps drop.
   2. global /pause         → halts everything.
   3. email-channel paused  → portal still runs, cold emails skipped (EMAIL_PAUSED).
   4. bounce auto-throttle  → a simulated high-bounce batch trips the throttle, sets
-                             data/email_paused.flag, and returns a Telegram warning.
+                             data/email_paused.flag, and returns a warning for the run report.
+  5. submit policy         → the exact Aside instruction for each mode, and refusal for
+                             an unapproved job.
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import apply_policy  # noqa: E402
 import bounce_check  # noqa: E402
 import daily_caps  # noqa: E402
 import email_send  # noqa: E402
@@ -57,11 +62,9 @@ os.environ["GMAIL_ADDRESS"] = "jobhunt.fake@example.com"  # From: for the demo o
 
 def build_jobs(workdir: str):
     resume = os.path.join(workdir, "Resume.pdf")
-    cover = os.path.join(workdir, "CoverLetter.pdf")
-    for p, tag in ((resume, b"%PDF-1.4 fake resume\n"), (cover, b"%PDF-1.4 fake cover\n")):
-        with open(p, "wb") as fh:
-            fh.write(tag)
-    files = {"resume": resume, "cover_letter": cover}
+    with open(resume, "wb") as fh:
+        fh.write(b"%PDF-1.4 fake tailored CV\n")
+    files = {"resume": resume}
 
     return [
         {   # A: verified finder email → portal + email
@@ -115,9 +118,12 @@ def process_queue(jobs, *, dry_run, paused, caps, counts_path, email_flag_path):
             if daily_caps.remaining("apply", caps["applies_per_day"], path=counts_path) <= 0:
                 actions["portal"] = {"action": "SKIP", "reason": "applies_per_day cap reached"}
             else:
+                cfg = {"dry_run": dry_run, "apply": {"auto_submit": True}}
+                mode = apply_policy.submit_mode(cfg, approved=True, paused=False)
                 daily_caps.record("apply", path=counts_path)
-                actions["portal"] = {"action": "FILL + HUMAN FINAL CLICK",
-                                     "portal": job.get("portal"), "auto_submit": False}
+                actions["portal"] = {"action": "FILL" if mode == "stop_before_submit" else "SUBMIT",
+                                     "mode": mode, "portal": job.get("portal"),
+                                     "auto_submit": mode == "auto_submit"}
 
         # --- (b) Cold email (if cold_email and an address exists) ---
         if job.get("cold_email") and job.get("contact_email") and job.get("email_source") != "none":
@@ -129,7 +135,7 @@ def process_queue(jobs, *, dry_run, paused, caps, counts_path, email_flag_path):
                 msg = email_send.build_message(
                     to=job["contact_email"], subject=job["email_subject"],
                     body=job["email_body"],
-                    attachments=[job["files"]["resume"], job["files"]["cover_letter"]])
+                    attachments=[job["files"]["resume"]])
                 result = email_send.send(msg, dry_run=dry_run)
                 daily_caps.record("email", path=counts_path)
                 sent_recipients.append(job["contact_email"])
@@ -217,10 +223,38 @@ def main() -> int:
           f"rate={report['throttle']['bounce_rate']} ({report['throttle']['reason']})")
     print(f"  email paused now: {bounce_check.is_email_paused(path=email_flag)}")
     if report["warning"]:
-        print("  Telegram warning →")
+        print("  run-report warning →")
         for line in report["warning"].splitlines():
             print(f"      {line}")
     bounce_check.set_email_pause(False, path=email_flag)  # clean up
+
+    # ---- Scenario 5: submit policy -----------------------------------------
+    print("\nSCENARIO 5 — submit policy (what Aside is told to do):")
+    live_auto = {"dry_run": False, "apply": {"auto_submit": True}}
+    live_manual = {"dry_run": False, "apply": {"auto_submit": False}}
+    modes = {
+        "dry_run": apply_policy.submit_mode({"dry_run": True, "apply": {"auto_submit": True}}, True),
+        "live+auto": apply_policy.submit_mode(live_auto, True),
+        "live+manual": apply_policy.submit_mode(live_manual, True),
+        "not approved": apply_policy.submit_mode(live_auto, False),
+        "paused": apply_policy.submit_mode(live_auto, True, paused=True),
+        "unreadable cfg": apply_policy.submit_mode(None, True),
+    }
+    for k, v in modes.items():
+        print(f"  {k:<15} → {v}")
+    packet = apply_policy.build_packet(
+        {"job_id": "greenhouse:FAKE", "company": "Globex", "title": "Product Designer",
+         "url": "https://www.linkedin.com/jobs/view/1/",
+         "employer_url": "https://boards.greenhouse.io/globex/jobs/1", "cv_pdf": "/tmp/cv.pdf"},
+        {"candidate": {"full_name": "Fake Person", "email": "fake@example.com"}},
+        {"notice_period": "30 days"})
+    task_dry = apply_policy.aside_task(packet, modes["dry_run"], "/tmp/packet.json")
+    task_auto = apply_policy.aside_task(packet, modes["live+auto"], "/tmp/packet.json")
+    try:
+        apply_policy.aside_task(packet, "refuse", "/tmp/packet.json")
+        refused = False
+    except ValueError:
+        refused = True
 
     # ---- Assertions --------------------------------------------------------
     print("\n" + "-" * 74)
@@ -230,9 +264,9 @@ def main() -> int:
 
     # 1: both channels acted for A and B; C is portal-only.
     a, b, c = by_id1["linkedin:FAKE-A1"], by_id1["remoteok:FAKE-C3"], by_id1["indeed:FAKE-D4"]
-    ok_dual = (a["portal"]["action"].startswith("FILL") and a["email"]["action"] == "DRY_RUN"
-               and b["portal"]["action"].startswith("FILL") and b["email"]["action"] == "DRY_RUN"
-               and c["portal"]["action"].startswith("FILL") and c["email"]["action"] == "NONE")
+    ok_dual = (a["portal"]["action"] == "FILL" and a["email"]["action"] == "DRY_RUN"
+               and b["portal"]["action"] == "FILL" and b["email"]["action"] == "DRY_RUN"
+               and c["portal"]["action"] == "FILL" and c["email"]["action"] == "NONE")
     failures += [] if ok_dual else ["dual-channel actions wrong"]
     print(f"  [{'OK' if ok_dual else 'XX'}] A+B do BOTH (portal+email DRY_RUN); C portal-only")
 
@@ -265,7 +299,20 @@ def main() -> int:
     print(f"  [{'OK' if ok_throttle else 'XX'}] bounce throttle tripped + warned "
           f"({len(report['bounced'])}/3 bounced)")
 
-    # 7: zero network (SMTP + IMAP spies never fired).
+    # 7: submit policy — dry_run never submits; auto_submit only when approved and live.
+    ok_policy = (modes == {"dry_run": "stop_before_submit", "live+auto": "auto_submit",
+                           "live+manual": "user_submits", "not approved": "refuse",
+                           "paused": "refuse", "unreadable cfg": "stop_before_submit"}
+                 and "Do NOT click the final Submit" in task_dry
+                 and "click the final Submit" in task_auto and "do not solve it" in task_auto
+                 and refused
+                 and packet["apply_url"].startswith("https://boards.greenhouse.io")
+                 and any("react-select" in q for q in packet["quirks"]))
+    failures += [] if ok_policy else [f"submit policy wrong: {modes}"]
+    print(f"  [{'OK' if ok_policy else 'XX'}] submit policy: dry_run stops before Submit, "
+          "auto_submit only when approved + live, refuse otherwise; employer URL wins")
+
+    # 8: zero network (SMTP + IMAP spies never fired).
     ok_offline = len(_smtp_calls) == 0
     failures += [] if ok_offline else [f"SMTP called: {_smtp_calls}"]
     print(f"  [{'OK' if ok_offline else 'XX'}] NO network (SMTP invoked {len(_smtp_calls)}×, "
@@ -279,7 +326,7 @@ def main() -> int:
         print("=" * 74)
         return 1
     print("RESULT: PASS ✅ — dual-channel both actions, guesses sent, caps + pauses + "
-          "bounce throttle enforced, fully offline.")
+          "bounce throttle + submit policy enforced, fully offline.")
     print("=" * 74)
     return 0
 

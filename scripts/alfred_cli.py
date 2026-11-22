@@ -10,9 +10,14 @@ Subcommands:
     alfred env                       print the venv's python path for THIS OS (copy-pasteable)
     alfred init                      create ~/.alfred/{config,data,output}/ + copy templates
     alfred set-secret <KEY>          getpass (hidden) → write KEY=value into ~/.alfred/.env
-    alfred detect-telegram-chat-id   getUpdates → write TELEGRAM_CHAT_ID into .env
     alfred doctor                    full health checklist (superset of orchestrate --preflight)
     alfred parse-resume <path.docx>  copy resume into data/ + print extracted vs still-needed fields
+    alfred cv-from-docx <path.docx>  first cv.md (career-ops's CV source) from the resume
+    alfred careerops-install         clone the pinned career-ops engine + npm deps + Chromium
+    alfred careerops-status          is career-ops installed, which Node, which pin
+    alfred careerops-onboard <answers.json>   write config/profile.yml + portals.yml
+    alfred review | approve <id> [--email] | skip <id> | queue | pause | resume
+                                     the manual approval gate (see review_store.py)
 
 Cross-platform note: this CLI runs the same on Windows, macOS, and Linux — every
 path is built with os.path and the home dir resolves via os.path.expanduser("~")
@@ -44,10 +49,9 @@ import paths  # noqa: E402  single source of truth for CODE_ROOT + example templ
 # Key sets (from .env.example / SPEC §8a)
 # ---------------------------------------------------------------------------
 
-REQUIRED_SECRETS = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
-                    "GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]
-OPTIONAL_SECRETS = ["HUNTER_API_KEY", "APOLLO_API_KEY",
-                    "NOTION_API_KEY", "NOTION_DATABASE_ID"]
+# Gmail is the only required secret: it sends the cold emails you approve.
+REQUIRED_SECRETS = ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]
+OPTIONAL_SECRETS = ["HUNTER_API_KEY", "APOLLO_API_KEY"]
 KNOWN_KEYS = REQUIRED_SECRETS + OPTIONAL_SECRETS
 
 
@@ -263,9 +267,9 @@ def cmd_init(args: argparse.Namespace) -> int:
         print(f"  •  exists  : {s}")
     print("-" * 60)
     print("Next:")
-    print("  1. alfred set-secret TELEGRAM_BOT_TOKEN   (then GMAIL_ADDRESS, GMAIL_APP_PASSWORD)")
-    print("  2. message your bot once, then: alfred detect-telegram-chat-id")
-    print("  3. edit config/search.yaml + config/profile.yaml (or use /alfred-setup)")
+    print("  1. alfred set-secret GMAIL_ADDRESS   (then GMAIL_APP_PASSWORD)")
+    print("  2. alfred careerops-install          (the career-ops engine; needs Node 22.13+)")
+    print("  3. alfred cv-from-docx <resume.docx> (then /alfred:alfred-setup finishes the profile)")
     print("  4. alfred doctor")
     return 0
 
@@ -279,7 +283,7 @@ def cmd_set_secret(args: argparse.Namespace) -> int:
 
     key = args.key.strip()
     if not re.fullmatch(r"[A-Z][A-Z0-9_]*", key):
-        print(f"❌ invalid key '{key}' — expected UPPER_SNAKE_CASE (e.g. TELEGRAM_BOT_TOKEN)")
+        print(f"❌ invalid key '{key}' — expected UPPER_SNAKE_CASE (e.g. GMAIL_ADDRESS)")
         return 2
     if key not in KNOWN_KEYS:
         print(f"⚠️  '{key}' is not a recognized Alfred key — setting it anyway.")
@@ -303,72 +307,6 @@ def cmd_set_secret(args: argparse.Namespace) -> int:
     write_secret(hp["env"], key, value)
     del value  # do not keep the secret in memory longer than needed
     print(f"✅ {key} saved to {hp['env']}  (value hidden; file perms 600).")
-    return 0
-
-
-# ---------------------------------------------------------------------------
-# detect-telegram-chat-id
-# ---------------------------------------------------------------------------
-
-def extract_chat_id(updates_json: Any) -> Optional[str]:
-    """PURE: newest chat.id from a Telegram getUpdates response, or None."""
-    if not isinstance(updates_json, dict) or not updates_json.get("ok"):
-        return None
-    result = updates_json.get("result") or []
-    for update in reversed(result):
-        if not isinstance(update, dict):
-            continue
-        for key in ("message", "edited_message", "channel_post", "my_chat_member"):
-            msg = update.get(key)
-            if isinstance(msg, dict):
-                chat = msg.get("chat") or {}
-                cid = chat.get("id")
-                if cid is not None:
-                    return str(cid)
-    return None
-
-
-def _get_updates(token: str, timeout: int = 10) -> Any:
-    """Network chokepoint: fetch getUpdates. Injected/faked in the dry-run."""
-    import requests
-    url = f"https://api.telegram.org/bot{token}/getUpdates"
-    resp = requests.get(url, params={"timeout": 0}, timeout=timeout)
-    resp.raise_for_status()
-    return resp.json()
-
-
-def _redact(text: str, secret: str) -> str:
-    """Strip a secret from a string before it is printed/logged. The bot token is
-    embedded in the request URL, so requests' HTTPError/ConnectionError/Timeout
-    messages all echo it — redact it from EVERY exception, not just some."""
-    if secret and text:
-        text = text.replace(secret, "***REDACTED***")
-    return text
-
-
-def cmd_detect(args: argparse.Namespace, _fetch: Optional[Callable[[str], Any]] = None) -> int:
-    hp = home_paths()
-    paths.load_env(hp["env"])
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-    if not token:
-        print("❌ TELEGRAM_BOT_TOKEN not set. First run:  alfred set-secret TELEGRAM_BOT_TOKEN")
-        return 1
-
-    fetch = _fetch or _get_updates
-    try:
-        data = fetch(token)
-    except Exception as exc:  # network / HTTP error — its message may embed the token
-        print(f"❌ could not reach Telegram getUpdates: {_redact(str(exc), token)}")
-        return 1
-
-    cid = extract_chat_id(data)
-    if not cid:
-        print("No message found yet. In Telegram, send ANY message to your bot, then re-run:")
-        print("    alfred detect-telegram-chat-id")
-        return 1
-
-    write_secret(hp["env"], "TELEGRAM_CHAT_ID", cid)  # chat id is an identifier, not a secret
-    print(f"✅ TELEGRAM_CHAT_ID = {cid}  saved to {hp['env']}.")
     return 0
 
 
@@ -409,21 +347,26 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         search_path=hp["search"], profile_path=hp["profile"],
         resume_glob=os.path.join(hp["data"], "*.docx"),
         pause_flag=os.path.join(hp["data"], "paused.flag"),
+        cv_path=os.path.join(hp["home"], "cv.md"),
     )
     c = report["checks"]
     checks.append(("ok" if c["search_config"]["exists"] else "fail",
                    "search config", hp["search"]))
     checks.append(("ok" if c["profile_config"]["exists"] else "fail",
                    "profile config", hp["profile"]))
-    checks.append(("ok" if c["resume"]["exists"] else "fail", "master resume",
-                   (c["resume"]["found"][0] if c["resume"]["found"] else c["resume"]["glob"])))
+    checks.append(("ok" if c["cv"]["exists"] else "fail", "cv.md",
+                   c["cv"]["path"] if c["cv"]["exists"]
+                   else c["cv"]["path"] + " missing — alfred cv-from-docx <resume.docx>"))
+    checks.append(("ok" if c["resume"]["exists"] else "info", "master resume (.docx)",
+                   (c["resume"]["found"][0] if c["resume"]["found"]
+                    else "none in data/ (only needed to create cv.md)")))
 
     # 3) Required secrets filled (required)
     env_vals = _read_env_values(hp["env"])
     empty_required = [k for k in REQUIRED_SECRETS if not env_vals.get(k, "").strip()]
     checks.append(("fail" if empty_required else "ok", "required secrets",
                    ("blank: " + ", ".join(empty_required) + "  (alfred set-secret <KEY>)")
-                   if empty_required else "all set (TELEGRAM_*, GMAIL_*)"))
+                   if empty_required else "all set (GMAIL_*)"))
 
     # 4) Optional secrets (advisory)
     empty_optional = [k for k in OPTIONAL_SECRETS if not env_vals.get(k, "").strip()]
@@ -431,45 +374,35 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                    ("blank (fine to leave): " + ", ".join(empty_optional))
                    if empty_optional else "all set"))
 
-    # 5) LibreOffice / soffice (advisory — needed only for DOCX→PDF at tailoring).
-    #    Use the cross-platform finder so a Windows install off PATH is still detected.
-    #    Finding the binary is NOT enough: an install missing the Writer module still
-    #    ships `soffice` but cannot open a .docx, so probe Writer too or this check
-    #    reports green while every resume/cover-letter PDF silently fails to build.
-    writer: Optional[bool] = None
-    try:
-        import docx_to_pdf
-        soffice = docx_to_pdf.find_soffice()
-        writer = docx_to_pdf.writer_available()
-    except Exception:
-        soffice = shutil.which("soffice") or shutil.which("libreoffice")
-    if not soffice:
-        checks.append(("warn", "LibreOffice (soffice)",
-                       "not found — install for PDF export: "
-                       "winget install TheDocumentFoundation.LibreOffice  /  "
-                       "brew install --cask libreoffice  /  apt-get install libreoffice"))
-    elif writer is False:
-        checks.append(("warn", "LibreOffice (soffice)",
-                       f"{soffice} — but the Writer module is MISSING, so .docx→PDF will "
-                       "fail and no resume/cover letter will be attached. Install it: "
-                       "apt-get install libreoffice-writer  (or the full libreoffice package)"))
-    else:
-        checks.append(("ok", "LibreOffice (soffice)",
-                       soffice + ("" if writer else "  (Writer module unverified)")))
+    # 5) career-ops engine: Node + pinned install + its own setup check.
+    import careerops_bridge as cob
+    st = cob.status()
+    checks.append(("ok" if st["node_ok"] else "fail", "Node.js",
+                   (st["node"] or "not found") + ("" if st["node_ok"] else
+                    f" — need {'.'.join(map(str, cob.NODE_MIN))}+ (brew install node)")))
+    checks.append(("ok" if st["installed"] else "fail", "career-ops",
+                   (f"{st['root']} @ {cob.PIN[:7]}") if st["installed"]
+                   else "not installed — alfred careerops-install"))
+    if st["installed"] and st["node_ok"]:
+        cdoc = cob.doctor()
+        missing = cdoc.get("missing") or []
+        unpers = [u.get("path") for u in (cdoc.get("unpersonalized") or []) if isinstance(u, dict)]
+        if cdoc.get("dataRootError"):
+            checks.append(("fail", "career-ops data", str(cdoc.get("warnings", ["data root refused"])[0])))
+        elif missing:
+            checks.append(("fail", "career-ops setup", "missing: " + ", ".join(missing)
+                           + "  (/alfred:alfred-setup)"))
+        else:
+            checks.append(("warn" if unpers else "ok", "career-ops setup",
+                           ("still template: " + ", ".join(unpers)) if unpers
+                           else "cv.md, profile.yml, _profile.md, portals.yml present"))
 
-    # 6) Notion — informational, NOT a warning.
-    #    This cannot test the connection: Notion is reached through the Claude Code MCP
-    #    connector, which lives outside this process entirely, so all we can read here is
-    #    whether the optional direct-API-key escape hatch is set. A blank NOTION_API_KEY is
-    #    the NORMAL, intended state for the connector path — flagging it warned permanently
-    #    on a correct setup, which trains the reader to ignore doctor's warnings.
-    if env_vals.get("NOTION_API_KEY", "").strip():
-        checks.append(("ok", "Notion", "direct NOTION_API_KEY present"))
-    else:
-        checks.append(("info", "Notion",
-                       "using the Claude Code MCP connector (no API key needed — this is "
-                       "the normal setup). Not checked here: run /mcp to confirm it is "
-                       "authorized."))
+    # 6) Aside — the only browser Alfred drives (LinkedIn, Indeed, Wellfound, applying).
+    aside = shutil.which("aside") or (os.path.expanduser("~/.local/bin/aside")
+                                      if os.path.isfile(os.path.expanduser("~/.local/bin/aside")) else None)
+    checks.append(("ok" if aside else "warn", "Aside browser",
+                   aside or "aside CLI not found — browser sources and portal applying will be "
+                            "skipped (install: https://aside.com)"))
 
     # ---- render ----
     print("Alfred · doctor")
@@ -626,6 +559,51 @@ def cmd_parse_resume(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# career-ops + review passthroughs
+# ---------------------------------------------------------------------------
+
+def cmd_cv_from_docx(args: argparse.Namespace) -> int:
+    import cv_from_docx
+    return cv_from_docx.main([args.path, "--out", os.path.join(home_target(), "cv.md")]
+                             + (["--force"] if args.force else []))
+
+
+def cmd_careerops_install(args: argparse.Namespace) -> int:
+    import careerops_bridge as cob
+    print(f"Installing career-ops @ {cob.PIN[:7]} into {cob.root()} "
+          "(downloads from GitHub + npm, ~200 MB with Chromium)…")
+    res = cob.install()
+    print(json.dumps(res, indent=2))
+    if res.get("ok"):
+        print(json.dumps(cob.init_templates(), indent=2))
+        print(f"house rules → {cob.install_house_rules()}")
+    return 0 if res.get("ok") else 1
+
+
+def cmd_careerops_status(args: argparse.Namespace) -> int:
+    import careerops_bridge as cob
+    print(json.dumps(cob.status(), indent=2))
+    return 0
+
+
+def cmd_careerops_onboard(args: argparse.Namespace) -> int:
+    import careerops_bridge as cob
+    with open(args.answers, "r", encoding="utf-8") as fh:
+        answers = json.load(fh)
+    print(json.dumps(cob.onboard_write(answers, force=args.force, only=args.only), indent=2))
+    return 0
+
+
+def cmd_review(args: argparse.Namespace) -> int:
+    import review_store
+    cmd = "list" if args.command == "review" else args.command
+    argv = [cmd] + ([args.job_id] if getattr(args, "job_id", None) else [])
+    if getattr(args, "email", False):
+        argv.append("--email")
+    return review_store._cli(argv)
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -644,13 +622,32 @@ def build_parser() -> argparse.ArgumentParser:
     p_secret = sub.add_parser("set-secret", help="getpass (hidden) → write KEY into .env")
     p_secret.add_argument("key", help="e.g. TELEGRAM_BOT_TOKEN, GMAIL_ADDRESS, GMAIL_APP_PASSWORD")
 
-    sub.add_parser("detect-telegram-chat-id",
-                   help="read getUpdates → write TELEGRAM_CHAT_ID into .env")
-
     sub.add_parser("doctor", help="full readiness checklist (superset of --preflight)")
 
     p_resume = sub.add_parser("parse-resume", help="copy resume into data/ + report fields")
     p_resume.add_argument("path", help="path to your master resume .docx")
+
+    p_cv = sub.add_parser("cv-from-docx", help="first cv.md from the resume .docx")
+    p_cv.add_argument("path")
+    p_cv.add_argument("--force", action="store_true")
+
+    sub.add_parser("careerops-install", help="clone pinned career-ops + npm ci + Chromium")
+    sub.add_parser("careerops-status", help="career-ops install / Node / pin")
+    p_onb = sub.add_parser("careerops-onboard", help="write config/profile.yml + portals.yml")
+    p_onb.add_argument("answers", help="JSON file in onboard-write.mjs's answers shape")
+    p_onb.add_argument("--force", action="store_true")
+    p_onb.add_argument("--only", choices=["profile", "portals"])
+
+    for name, hlp in (("review", "list jobs waiting for your Approve/Skip"),
+                      ("queue", "approved jobs not yet applied"),
+                      ("pause", "stop the application agent"),
+                      ("resume", "lift /pause")):
+        sub.add_parser(name, help=hlp)
+    p_ap = sub.add_parser("approve", help="approve a job (add --email to clear its email too)")
+    p_ap.add_argument("job_id")
+    p_ap.add_argument("--email", action="store_true")
+    p_sk = sub.add_parser("skip", help="skip a job")
+    p_sk.add_argument("job_id")
 
     return parser
 
@@ -664,9 +661,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         "env": cmd_env,
         "init": cmd_init,
         "set-secret": cmd_set_secret,
-        "detect-telegram-chat-id": cmd_detect,
         "doctor": cmd_doctor,
         "parse-resume": cmd_parse_resume,
+        "cv-from-docx": cmd_cv_from_docx,
+        "careerops-install": cmd_careerops_install,
+        "careerops-status": cmd_careerops_status,
+        "careerops-onboard": cmd_careerops_onboard,
+        "review": cmd_review,
+        "queue": cmd_review,
+        "pause": cmd_review,
+        "resume": cmd_review,
+        "approve": cmd_review,
+        "skip": cmd_review,
     }
     handler = dispatch.get(args.command)
     if handler is None:

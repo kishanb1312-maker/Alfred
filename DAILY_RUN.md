@@ -1,85 +1,50 @@
-# Alfred — daily 6PM run
+# Alfred — daily run
 
-Health-gate first, full pipeline second. If LinkedIn is logged out, nothing runs and you
-get told why.
-
-## The prompt
-
-Paste this into Claude Code (or schedule it):
+Health check first, pipeline second, then it waits for your review. Paste into Claude Code (or
+schedule it with `/schedule`).
 
 ---
 
-Run Alfred's daily cycle. I am away — **never ask me a question**; assume, log it, continue.
+Run Alfred's daily cycle. I am away — **never ask me a question**; make the reasonable choice,
+write what you assumed to `data/run_assumptions.md`, and continue.
 
-**STEP 1 — Health gate.** Open each site in the browser and report LIVE / LOGGED-OUT / BLOCKED /
-UNREACHABLE: LinkedIn (`/jobs/search`), Indeed (`in.indeed.com`), Wellfound (`/jobs`). Then confirm
-Telegram and Notion respond, and that `data/paused.flag` is absent.
+**STEP 1 — Health check.**
+- `./.venv/bin/python scripts/alfred_cli.py doctor` — stop on any ❌.
+- Through **Aside** (run `aside guide` first), open LinkedIn `/jobs/search`, `in.indeed.com` and
+  Wellfound `/jobs` and report each as LIVE / LOGGED-OUT / BLOCKED / UNREACHABLE. A logged-out or
+  blocked site is skipped for this run, with a note; it never stops the zero-token sources.
+- `data/paused.flag` present → run stages 1–5 but not apply.
 
-**LinkedIn is a hard gate.** If it is logged out, blocked, or shows a login wall: send me a Telegram
-message saying LinkedIn needs a re-login and **STOP THE ENTIRE RUN**. Do not run any stage. Do not
-substitute an HTTP fetch. A silent failure at 6PM is the one outcome I cannot accept — I must always
-get a Telegram message, whether the run proceeded or aborted.
-
-Indeed or Wellfound being down is NOT a hard gate: note it, skip that source, continue.
-
-**STEP 2 — Full pipeline**, only if the gate passed. Run each as its own subagent, in order:
+**STEP 2 — Pipeline**, each stage as its own subagent, in order, each reading the previous output:
 
 1. `job-finder` → `data/finder_output.json`
-2. `company-research` → scores + recruiter emails
-3. `resume-cover-letter` → tailored artifacts
-4. `tracker` → Notion rows at "Ready for Review"
-5. `approval-gate` → first `scripts/approval_poll.py` to reconcile yesterday's taps (an Approve
-   there must produce its **email preview card** — Send / Edit / Cancel — not just a Notion
-   status change), then a Telegram card per new job, then **STOP**
+2. `job-verifier` → `data/verified_jobs.json` (closed and stale postings dropped)
+3. `job-evaluator` → career-ops triage, then A–H reports + 1–5 scores, tracker rows
+4. `contact-finder` → contact emails for jobs at or above `min_score`
+5. `cv-tailor` → tailored CV PDFs + fact gate + email drafts → review list
 
-Rules: do **not** run stage 6 (application-agent) — I approve in Telegram myself. A blocked
-non-LinkedIn stage is skipped with a note, never fatal. Never fabricate a job, company, email, or
-resume claim — zero with a reason beats a full-looking lie. Respect `max_age_days`, `seniority`,
-`locations`, `match_threshold`, `caps`, `pacing`. Use `./.venv/bin/python` for script calls.
+Do **not** run the application agent on new jobs: I approve them myself. Jobs already in
+`data/approved_queue.json` from earlier approvals may be applied (stage 7), respecting dry_run,
+caps and pacing.
 
-**Finish by sending me ONE Telegram summary**: gate result per site, jobs per source, how many
-scored / tailored / tracked, cards sent, email preview cards sent, and anything skipped. If
-`approval_poll.py --status` reports anything under `pending_email_previews`, name those jobs —
-they are approved jobs whose email I was never asked about.
+Rules: never fabricate a job, company, email or CV claim — zero with a reason beats a full-looking
+lie. Respect `max_age_days`, `seniority`, `locations`, `min_score`, `caps`, `pacing`. Use
+`./.venv/bin/python` for script calls; run career-ops scripts from `vendor/career-ops` with
+`CAREER_OPS_ROOT` set to the Alfred home.
+
+**Finish with one summary**: health per site, jobs per source, verified / dropped (why),
+evaluated with scores, CVs passed / blocked by the fact gate, how many wait for my review
+(`alfred review`), anything applied, every `needs_confirmation` line, caps left.
 
 ---
 
-## Before scheduling
+## When you are back
 
 ```bash
-grep dry_run config/search.yaml     # true until you've watched a full pass
-ls data/paused.flag 2>/dev/null     # should not exist
+./.venv/bin/python scripts/alfred_cli.py review
+./.venv/bin/python scripts/alfred_cli.py approve <job_id>          # portal only
+./.venv/bin/python scripts/alfred_cli.py approve <job_id> --email  # portal + cold email
+./.venv/bin/python scripts/alfred_cli.py skip <job_id>
 ```
 
-## What has to be true at 6PM
-
-- The Mac is **awake** and Claude Code can run — a sleeping machine runs nothing.
-- The browser still carries your **signed-in LinkedIn session**. This is what the gate exists to
-  catch; LinkedIn expires sessions on its own schedule, not yours.
-- Telegram bot token in `.env` — it is the only way an aborted run can reach you.
-
-## Reading the result
-
-| Telegram message | Meaning |
-|---|---|
-| ⚠️ LinkedIn needs re-login | Nothing ran. Log in, then re-run the prompt manually. |
-| Summary + review cards | Normal run. Approve/Skip at your leisure. |
-| Approve tapped, then an email preview card | Expected. The preview arrives on the next poll — immediately if the run is still going, otherwise on the next run's reconcile. |
-| Summary, 0 jobs | Ran fine, found nothing new — `max_age_days: 3` is tight. |
-| **Nothing at all** | The run never started (Mac asleep, Claude Code not running). Check the schedule. |
-
-That last row is why the summary is mandatory: silence means the scheduler failed, not that
-Alfred found nothing.
-
-## Approving after the run, with the laptop shut
-
-The run above ends after the review cards. Your Approve / Send taps then need something
-awake to collect them — otherwise they wait for the next run, and Telegram drops taps it
-could not deliver after 24 hours.
-
-Run `scripts/alfred_worker.py` on anything that stays on (Pi, VPS, container) and the whole
-email conversation works with the laptop off: Approve → preview card, Edit → re-preview,
-Send → the email actually goes out with a ✅ confirmation. Portal applications still wait
-for your laptop — they need your signed-in browser. Setup: **`deploy/README.md`**.
-
-Not running a worker? Then tap while the Mac is awake, and keep the 24-hour window in mind.
+Then `/alfred:alfred-apply`.

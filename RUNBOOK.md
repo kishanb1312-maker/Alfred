@@ -1,65 +1,69 @@
 # Alfred — Runbook
 
-This is what the **main Claude Code session** executes when you say **"run Alfred"** (or run
-`/alfred-run`). It sequences the six worker subagents in `agents/`. Keep `dry_run: true` in your
-search config until you've watched a full pass.
+What the main session executes for **"run Alfred"** / `/alfred:alfred-run`. Keep `dry_run: true`
+in `config/search.yaml` until you have watched a full pass.
 
-> **Paths:** config, resume, and runtime data (`config/*.yaml`, `data/`, `output/`) now resolve under
-> **`~/.alfred/`** (override with `ALFRED_HOME`); a bare clone falls back to the repo root. The
-> sequence itself is unchanged.
+**Paths.** Everything below is relative to the Alfred home (`$ALFRED_HOME`, else `~/.alfred`, else
+the repo root). career-ops's code is `vendor/career-ops/`; its user files (`cv.md`,
+`config/profile.yml`, `portals.yml`, `modes/_profile.md`, `data/applications.md`, `reports/`,
+`output/`) live in the home itself, so Alfred and career-ops share one folder. Every career-ops
+`node` script runs from `vendor/career-ops` with `CAREER_OPS_ROOT=$ALFRED_HOME`.
 
 ## Preconditions
-Run `python scripts/orchestrate.py --preflight` first. It confirms `config/search.yaml`,
-`config/profile.yaml`, and a master resume in `data/` exist, and reports whether **dry_run** is on
-and whether **/pause** (`data/paused.flag`) is set. If paused, stop.
+
+`scripts/orchestrate.py --preflight` — `config/search.yaml`, `config/profile.yaml`, `cv.md`
+present; reports dry_run and /pause. `scripts/careerops_bridge.py status` — career-ops installed,
+Node 22.13+. Either fails → stop.
 
 ## The sequence
 
-0. **Preflight** — `scripts/orchestrate.py --preflight`. Abort on missing configs/resume or if paused.
-1. **Reconcile** — invoke **approval-gate**, which runs `scripts/approval_poll.py` to poll Telegram
-   for taps made since the last run and act on each one: an Approve enqueues the job **and sends the
-   email preview card** (Send / Edit / Cancel), a Skip is recorded, a Send/Cancel answer is stored.
-   It also sweeps any approved job still missing its preview card. Notion is updated from the JSON
-   summary it prints. This clears the backlog first.
-2. **Find** — invoke **job-finder** → fresh, de-duped jobs (respects sources + caps).
-3. **Research** — invoke **company-research** per job → company analysis + verified email (waterfall)
-   + match score. Drop jobs below `match_threshold`.
-4. **Tailor** — invoke **resume-cover-letter** per surviving job → tailored .docx/.pdf + cover letter
-   + email text + `what_i_changed.md`. Merge into the canonical job object (below).
-5. **Track** — invoke **tracker** → create/​update a Notion row per job at Status "Ready for Review".
-6. **Approve** — invoke **approval-gate** → send a Telegram card per job (which stages each job's
-   email draft to disk, so a tap arriving days later is still answerable); poll briefly for immediate
-   taps with `approval_poll.py --timeout 60`. Un-tapped jobs wait for a later run.
-7. **Apply** — invoke **application-agent** → process `data/approved_queue.json` (respecting /pause,
-   dry_run, daily caps): send verified emails; fill portal forms and hand the final Submit to you on
-   LinkedIn/Workday. Mark Applied in Notion + `applied_history`.
-8. **Report** — `scripts/orchestrate.py --summary` → counts + caps remaining + what needs you.
+| # | Stage | Agent | Cost | Writes |
+|---|---|---|---|---|
+| 0 | Apply earlier approvals | `application-agent` | browser | tracker → Applied |
+| 1 | **Find** | `job-finder` | zero-token first (API/RSS + `careerops_scan`), then Aside | `data/finder_output.json` |
+| 2 | **Verify** — is the job real? | `job-verifier` | zero-token (career-ops scripts) | `data/verified_jobs.json`, `data/verify_dropped.json` |
+| 3 | **Evaluate** | `job-evaluator` | triage (cheap) → full A–H only for passes | `reports/*.md`, tracker row `Evaluated`, `data/evaluation_output.json` |
+| 4 | **Contacts** | `contact-finder` | small | contact fields |
+| 5 | **CV + fact gate** | `cv-tailor` | medium | `output/*.pdf`, `data/tailor_output.json`, review list |
+| 6 | **Review** — you decide | you (`/alfred:alfred-approve`, `alfred review`) | none | `data/job_decisions.json`, `data/approved_queue.json` |
+| 7 | **Apply** | `application-agent` | browser | tracker → Applied, follow-up seeded |
+| 8 | **Report** | `orchestrate.py --summary` | none | — |
 
-`/loop` may repeat this while the session stays open; otherwise run it whenever you're job-hunting.
+Only jobs with score ≥ `min_score` (default **4.0**, career-ops's own line) reach stages 4–6.
+Lower ones stay in the tracker as `Evaluated` with their report.
+
+## After you apply (any time)
+
+- `/alfred:alfred-tracker` — status overview, update a status (`set-status.mjs`).
+- `/alfred:alfred-followup` — who is due a follow-up, reply classification, outcomes.
+- `/alfred:alfred-interview` — prep, plan, practice, debrief, red flags.
+- `/alfred:alfred-offer` — offer walk-through, comparison, negotiation points.
+- `/alfred:alfred-learn` — rejection patterns, calibration, skill gaps, adjacent titles.
+- `/alfred:alfred-mode <mode>` — any other career-ops mode.
 
 ## Canonical job object (the data contract between agents)
 
-Every agent reads/writes this shape so hand-offs never drift:
+```
+# job-finder
+job_id, source, title, company, company_domain, location, url, posted_date, easy_apply,
+description_snippet, found_at
+# job-verifier
+employer_url, verification {status: live|unconfirmed, reason, employer_check}, repost
+# job-evaluator (career-ops)
+triage, score ("4.3/5"), recommendation, legitimacy, report, tracker_num, needs_confirmation
+# contact-finder
+contact_email, recipient_name, email_source, email_confidence, verified_mailbox
+# cv-tailor
+cv_pdf, cv_html, fact_check (pass|warn|block), fact_warnings, output_dir, email_staged
+# application-agent
+applied_date, apply_result {status, confirmation, final_url}
+```
 
-    {
-      # from job-finder
-      "job_id", "source", "title", "company", "company_domain",
-      "location", "url", "posted_date", "easy_apply", "description_snippet",
-      # added by company-research
-      "company_analysis": {summary, industry, size, tech_stack, values_culture,
-                           recent_signal, website},
-      "email": {address, recipient_name, confidence, source, verified, is_personal},
-      "match": {score, rationale, meets_threshold},
-      "channel": "portal" | "email",
-      # added by resume-cover-letter
-      "files": {resume, cover_letter},         # local paths in output/
-      "what_i_changed": "...",                  # from what_i_changed.md
-      # added by tracker
-      "notion_url": "...",
-      # updated by application-agent
-      "applied_date", "reply", "follow_up_sent"
-    }
+`scripts/orchestrate.py :: merge_job` assembles it; any missing key is null.
 
 ## Safety recap
-dry_run blocks all real sends/submits · /pause halts the application-agent · daily caps limit volume
-· the human makes the final Submit click on ban-prone portals · nothing acts without a Telegram Approve.
+
+`dry_run` blocks every submit and send · `/pause` (`alfred pause`) halts the application agent ·
+daily caps and pacing limit volume · nothing is applied without your approve, and no email without
+its own clear · the fact gate blocks invented CV claims · Aside never solves a CAPTCHA or logs in ·
+an application counts as submitted only with the site's confirmation.

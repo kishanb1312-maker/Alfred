@@ -16,6 +16,7 @@ from . import indeed
 from . import greenhouse_lever
 from . import linkedin_feed
 from . import linkedin_easy_apply
+from . import careerops_scan
 
 # name (as used in config search_order) → adapter module.
 # Python (API/RSS) sources expose fetch(...); BROWSER sources (BROWSER=True) expose
@@ -29,4 +30,6 @@ REGISTRY = {
     "greenhouse_lever": greenhouse_lever,
     "linkedin_feed": linkedin_feed,
     "linkedin_easy_apply": linkedin_easy_apply,
+    # career-ops scan.mjs: 150+ ATS providers, zero AI tokens (see careerops_bridge.py)
+    "careerops_scan": careerops_scan,
 }

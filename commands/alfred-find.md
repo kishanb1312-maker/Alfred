@@ -1,21 +1,16 @@
 ---
-description: Run ONLY the job-finder stage — find + de-dupe fresh IT jobs from the configured sources. No sends.
+description: Run ONLY the job-finder stage — Alfred's boards, the career-ops zero-token scanner, and LinkedIn/Indeed/Wellfound through Aside. No sends.
 disable-model-invocation: true
 ---
 
 # /alfred-find — job-finder only
 
-Run just the discovery stage. Keep it thin: this command only invokes the subagent; all logic stays
-in the agent definition.
+Run Alfred's scripts with `${ALFRED_HOME:-$HOME/.alfred}/.venv/bin/python` (fall back to `python3`); scripts live in
+`${CLAUDE_PLUGIN_ROOT}/scripts/`. career-ops lives in `${ALFRED_HOME:-$HOME/.alfred}/vendor/career-ops`: run its `node` scripts from
+there with `CAREER_OPS_ROOT=${ALFRED_HOME:-$HOME/.alfred}` exported, so it reads and writes Alfred's own files.
 
-1. **Preflight** — run `${ALFRED_HOME:-$HOME/.alfred}/.venv/bin/python
-   ${CLAUDE_PLUGIN_ROOT}/scripts/orchestrate.py --preflight` (fall back to `python3`). If it exits
-   non-zero (missing config/resume, or **/pause** set), STOP and report.
-2. **Invoke** the `alfred:job-finder` subagent → a normalized, de-duped list of fresh jobs, read
-   from and written to the same intermediate state files the full run uses (so this is interchangeable
-   with a full `/alfred-run`).
-3. Report the count found and dropped.
+1. **Preflight** — `orchestrate.py --preflight`; non-zero → STOP and report.
+2. **Invoke** `alfred:job-finder` → `data/finder_output.json` + `data/finder_report.json`.
+3. Report per-source counts, what was skipped and why.
 
-**Guardrails:** finding never sends or submits, but still honors the run guardrails — respect
-**/pause**, keep **dry_run** state intact, and do not bypass daily caps by pre-fetching more than a
-day's work. Nothing here contacts a recruiter or portal.
+Finding never contacts anyone or submits anything.

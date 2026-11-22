@@ -37,6 +37,7 @@ SEARCH_CONFIG = paths.search_config()
 PROFILE_CONFIG = paths.profile_config()
 RESUME_GLOB = paths.resume_glob()
 PAUSE_FLAG = paths.pause_flag()
+CV_PATH = paths.cv_md()
 
 
 # ---------------------------------------------------------------------------
@@ -46,8 +47,12 @@ PAUSE_FLAG = paths.pause_flag()
 def preflight(search_path: str = SEARCH_CONFIG,
               profile_path: str = PROFILE_CONFIG,
               resume_glob: str = RESUME_GLOB,
-              pause_flag: str = PAUSE_FLAG) -> Dict[str, Any]:
-    """Verify configs + resume exist; report dry_run and /pause status.
+              pause_flag: str = PAUSE_FLAG,
+              cv_path: str = CV_PATH) -> Dict[str, Any]:
+    """Verify configs + cv.md exist; report dry_run and /pause status.
+
+    cv.md is the CV career-ops tailors from. The .docx is only needed once, to
+    create it (`alfred cv-from-docx`), so a missing .docx is reported, not blocking.
 
     Returns a report dict with `ok`/`blocked` and per-check detail. `blocked` is
     True if a required input is missing OR /pause is set — the runbook aborts then.
@@ -58,6 +63,7 @@ def preflight(search_path: str = SEARCH_CONFIG,
     profile_exists = os.path.exists(profile_path)
     resume_matches = sorted(glob.glob(resume_glob))
     resume_exists = len(resume_matches) > 0
+    cv_exists = os.path.isfile(cv_path)
     paused = os.path.exists(pause_flag)
 
     if not search_exists:
@@ -66,9 +72,9 @@ def preflight(search_path: str = SEARCH_CONFIG,
     if not profile_exists:
         issues.append(f"missing profile config: {profile_path} "
                       "(copy config/profile.example.yaml → config/profile.yaml)")
-    if not resume_exists:
-        issues.append(f"no master resume found at {resume_glob} "
-                      "(put your .docx resume in data/)")
+    if not cv_exists:
+        issues.append(f"no cv.md at {cv_path} "
+                      "(alfred cv-from-docx <your resume.docx>, then /alfred:alfred-setup)")
 
     # Read dry_run only if the search config is present + parseable.
     dry_run: Optional[bool] = None
@@ -83,7 +89,7 @@ def preflight(search_path: str = SEARCH_CONFIG,
     if paused:
         issues.append(f"/pause is set ({pause_flag}) — application-agent must not act")
 
-    blocked = (not search_exists) or (not profile_exists) or (not resume_exists) or paused
+    blocked = (not search_exists) or (not profile_exists) or (not cv_exists) or paused
 
     return {
         "ok": not blocked,
@@ -94,6 +100,7 @@ def preflight(search_path: str = SEARCH_CONFIG,
             "search_config": {"path": search_path, "exists": search_exists},
             "profile_config": {"path": profile_path, "exists": profile_exists},
             "resume": {"glob": resume_glob, "found": resume_matches, "exists": resume_exists},
+            "cv": {"path": cv_path, "exists": cv_exists},
         },
         "issues": issues,
     }
@@ -109,9 +116,7 @@ def _print_preflight(report: Dict[str, Any]) -> None:
 
     print(f"  {mark(c['search_config']['exists'])} search config  : {c['search_config']['path']}")
     print(f"  {mark(c['profile_config']['exists'])} profile config : {c['profile_config']['path']}")
-    resume = c["resume"]
-    resume_show = resume["found"][0] if resume["found"] else resume["glob"]
-    print(f"  {mark(resume['exists'])} master resume  : {resume_show}")
+    print(f"  {mark(c['cv']['exists'])} cv.md          : {c['cv']['path']}")
 
     dry = report["dry_run"]
     dry_show = "ON (no real sends/submits)" if dry else ("OFF (LIVE)" if dry is False else "unknown")
@@ -137,16 +142,15 @@ def _print_preflight(report: Dict[str, Any]) -> None:
 def _derive_channel(research: Dict[str, Any]) -> str:
     if research.get("channel") in ("portal", "email"):
         return research["channel"]
-    email = research.get("email") or {}
-    if email.get("address") and email.get("verified") and email.get("source") not in (None, "", "none"):
-        return "email"
+    if research.get("contact_email") or (research.get("email") or {}).get("address"):
+        return "portal+email"
     return "portal"
 
 
 def merge_job(finder: Dict[str, Any],
               research: Optional[Dict[str, Any]] = None,
               tailoring: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Assemble the canonical job object from the three stages.
+    """Assemble the canonical job object from the stages.
 
     Pure dict merge; any missing key degrades to null so the contract shape is
     always complete regardless of how far a job progressed.
@@ -156,7 +160,7 @@ def merge_job(finder: Dict[str, Any],
     tailoring = tailoring or {}
 
     return {
-        # from job-finder
+        # job-finder
         "job_id": finder.get("job_id"),
         "source": finder.get("source"),
         "title": finder.get("title"),
@@ -167,20 +171,26 @@ def merge_job(finder: Dict[str, Any],
         "posted_date": finder.get("posted_date"),
         "easy_apply": finder.get("easy_apply"),
         "description_snippet": finder.get("description_snippet"),
-        # added by company-research
-        "company_analysis": research.get("company_analysis"),
-        "email": research.get("email"),
-        "match": research.get("match"),
+        # job-verifier
+        "employer_url": finder.get("employer_url") or research.get("employer_url"),
+        "liveness": finder.get("liveness") or research.get("liveness"),
+        "repost": finder.get("repost") or research.get("repost"),
+        # job-evaluator (career-ops A-H report, 1-5 score) + contact finder
+        "score": research.get("score"),
+        "recommendation": research.get("recommendation"),
+        "legitimacy": research.get("legitimacy"),
+        "report": research.get("report"),
+        "tracker_num": research.get("tracker_num"),
+        "contact_email": research.get("contact_email") or (research.get("email") or {}).get("address"),
+        "email_source": research.get("email_source"),
+        "verified_mailbox": research.get("verified_mailbox"),
         "channel": _derive_channel(research) if research else None,
-        # added by resume-cover-letter
-        "files": tailoring.get("files"),
-        "what_i_changed": tailoring.get("what_i_changed"),
-        # added by tracker
-        "notion_url": tailoring.get("notion_url"),
-        # updated by application-agent
+        # cv-tailor
+        "cv_pdf": tailoring.get("cv_pdf"),
+        "fact_check": tailoring.get("fact_check"),
+        "output_dir": tailoring.get("output_dir"),
+        # application-agent
         "applied_date": tailoring.get("applied_date"),
-        "reply": tailoring.get("reply", False),
-        "follow_up_sent": tailoring.get("follow_up_sent", False),
     }
 
 
@@ -192,8 +202,8 @@ def run_summary(stats: Dict[str, Any]) -> str:
     """Format the end-of-run report from a stats dict.
 
     Recognized keys (all optional, default 0/empty):
-      found, researched, tailored, tracked, approved, applied, skipped,
-      pending_approval, dry_run,
+      found, verified, dead, evaluated, tailored, blocked_facts, approved, applied,
+      skipped, pending_approval, dry_run,
       caps_remaining: {"apply": int, "email": int}
     """
     stats = stats or {}
@@ -210,9 +220,9 @@ def run_summary(stats: Dict[str, Any]) -> str:
         f"Alfred · run summary   [mode: {mode}]",
         "=" * 60,
         f"  Found (fresh, de-duped) : {g('found')}",
-        f"  Researched              : {g('researched')}",
-        f"  Tailored                : {g('tailored')}",
-        f"  Tracked (Notion rows)   : {g('tracked')}",
+        f"  Still open (verified)   : {g('verified')}   closed/unconfirmed dropped: {g('dead')}",
+        f"  Evaluated (A-H, 1-5)    : {g('evaluated')}",
+        f"  CV tailored + checked   : {g('tailored')}   blocked by fact check: {g('blocked_facts')}",
         f"  Approved                : {g('approved')}",
         f"  Applied                 : {g('applied')}",
         f"  Skipped                 : {g('skipped')}",
@@ -223,8 +233,9 @@ def run_summary(stats: Dict[str, Any]) -> str:
         "=" * 60,
     ]
     if g("pending_approval"):
-        lines.append(f"  ⏳ {g('pending_approval')} job(s) waiting for a Telegram tap "
-                     "(Approve/Skip) — will be picked up next run.")
+        lines.append(f"  ⏳ {g('pending_approval')} job(s) waiting for you — "
+                     "/alfred:alfred-approve, or `alfred review` in a terminal.")
+    lines.append("  Tracker: data/applications.md   Reports: reports/")
     return "\n".join(lines)
 
 

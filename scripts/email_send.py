@@ -1,7 +1,7 @@
 """Alfred · email_send — direct-recruiter email via Gmail SMTP (stdlib only).
 
 Used by the application-agent's email channel. Builds a MIME message with the
-tailored resume + cover letter attached and sends it through Gmail SMTP.
+tailored CV PDF attached and sends it through Gmail SMTP.
 
 Guardrails baked in:
   - dry_run=True NEVER connects — it returns the serialized message + "DRY_RUN".
@@ -53,7 +53,7 @@ def build_message(to: str, subject: str, body: str,
     """Construct an EmailMessage with `body` and any existing file attachments.
 
     `from_addr` defaults to the GMAIL_ADDRESS env value. Attachments that don't
-    exist on disk are skipped (e.g. a PDF not built because LibreOffice is
+    exist on disk are skipped (e.g. a CV PDF that was never generated is
     missing) — the caller decides whether that's acceptable.
     """
     msg = EmailMessage()
@@ -129,9 +129,9 @@ def send(msg: EmailMessage, dry_run: bool = True) -> Dict[str, Any]:
 def send_safe(msg: EmailMessage, dry_run: bool = True) -> Dict[str, Any]:
     """`send`, but an SMTP failure becomes a FAILED result instead of an exception.
 
-    The Telegram flow reports the outcome of every Send tap back to the user, so a
-    refused login or a rejected recipient has to arrive as a message they can read —
-    not as a traceback that ends the run and leaves the other approved jobs unsent.
+    The run report states the outcome of every send, so a refused login or a rejected
+    recipient has to arrive as a result the user can read, not as a traceback that ends
+    the run and leaves the other approved jobs unsent.
     """
     try:
         return send(msg, dry_run=dry_run)

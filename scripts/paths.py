@@ -148,10 +148,68 @@ def daily_counts_path() -> str:
     return os.path.join(data_dir(), "daily_counts.json")
 
 
-def telegram_state_path() -> str:
-    # Persists the getUpdates offset (and any future bot state). Name kept exactly
-    # as the pre-plugin code used it so existing state is never orphaned.
-    return os.path.join(data_dir(), "telegram_state.json")
+def job_decisions_path() -> str:
+    """Your Approve/Skip answer per job (the manual review step)."""
+    return os.path.join(data_dir(), "job_decisions.json")
+
+
+def email_decisions_path() -> str:
+    """Your Send/Cancel answer per job's email (approving a job is not approving its email)."""
+    return os.path.join(data_dir(), "email_decisions.json")
+
+
+def email_drafts_path() -> str:
+    return os.path.join(data_dir(), "email_drafts.json")
+
+
+def review_queue_path() -> str:
+    """Jobs evaluated, tailored and waiting for your Approve/Skip."""
+    return os.path.join(data_dir(), "review_queue.json")
+
+
+# ---------------------------------------------------------------------------
+# career-ops (vendored engine). Its USER layer lives in DATA_HOME itself, so the
+# tracker, reports, CVs and profile sit next to Alfred's own data:
+#   DATA_HOME/cv.md, config/profile.yml, portals.yml, data/applications.md,
+#   reports/, output/, interview-prep/, modes/_profile.md
+# Its CODE lives in DATA_HOME/vendor/career-ops (gitignored, pinned commit).
+# ---------------------------------------------------------------------------
+
+def careerops_dir() -> str:
+    override = os.environ.get("ALFRED_CAREEROPS_DIR", "").strip()
+    if override:
+        return os.path.abspath(os.path.expanduser(override))
+    return os.path.join(DATA_HOME, "vendor", "career-ops")
+
+
+def careerops_data_root() -> str:
+    """CAREER_OPS_ROOT for every career-ops call: Alfred's own home."""
+    return DATA_HOME
+
+
+def cv_md() -> str:
+    return os.path.join(DATA_HOME, "cv.md")
+
+
+def careerops_profile() -> str:
+    """career-ops profile (.yml). Not the same file as Alfred's config/profile.yaml."""
+    return os.path.join(config_dir(), "profile.yml")
+
+
+def portals_config() -> str:
+    return os.path.join(DATA_HOME, "portals.yml")
+
+
+def tracker_path() -> str:
+    return os.path.join(data_dir(), "applications.md")
+
+
+def reports_dir() -> str:
+    return os.path.join(DATA_HOME, "reports")
+
+
+def scan_history_path() -> str:
+    return os.path.join(data_dir(), "scan-history.tsv")
 
 
 # ---------------------------------------------------------------------------

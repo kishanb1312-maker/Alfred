@@ -1,131 +1,96 @@
 ---
 name: alfred-onboarding
-description: Guided first-run setup for Alfred — creates the venv & installs deps, initializes ~/.alfred, ingests the resume, collects search + screening config conversationally, walks the user through setting secrets via the CLI (never in chat), detects the Telegram chat id, points at the Notion + browser connectors, and loops on `alfred doctor` until green. Keeps dry_run ON.
+description: Guided first-run setup for Alfred — venv & deps, the pinned career-ops engine, cv.md built from the user's own resume, career-ops profile + portals (onboard-write.mjs), Alfred search + screening config, Gmail secrets via the CLI (never in chat), the Aside browser check, and `alfred doctor` until green. Keeps dry_run ON.
 when_to_use: When the user runs /alfred-setup, or asks to set up / configure / onboard Alfred for the first time.
 ---
 
 # Alfred onboarding wizard
 
-Guide the user through setup, one step at a time. Confirm each step succeeded before moving on.
-**Do not change any agent behavior or the apply flow — this is setup only.**
+Guide the user through setup one step at a time; confirm each step worked before the next.
 
-## Two rules that hold for the ENTIRE wizard
+## Rules for the whole wizard
 
-1. **Secrets are NEVER typed into chat and NEVER written by you.** For every secret, show the user how
-   to obtain it and have them run `alfred set-secret <KEY>` **in their own terminal** (it prompts
-   with `getpass`, no echo). Never ask the user to paste a token/password into the chat, never put a
-   secret in a file yourself, and never echo one back.
-2. **Non-secret config IS collected conversationally.** Ask for roles, locations, screening answers,
-   etc. in chat and write them directly to `~/.alfred/config/*.yaml`. Always keep `dry_run: true`.
+1. **Secrets are never typed into chat and never written by you.** The user runs
+   `alfred set-secret <KEY>` in their own terminal (hidden prompt).
+2. **Non-secret config is collected in chat** and written by you. Keep `dry_run: true`.
+3. **cv.md comes only from the user's resume and what they tell you.** Reorganize, never invent.
 
-## Works on Windows, macOS, and Linux
+## Conventions
 
-Alfred runs natively on all three — **no WSL / Ubuntu install is required on Windows.** The one thing
-that differs between OSes is shell syntax and the venv layout, so **first detect the OS** and use the
-matching column throughout. On Windows, prefer **PowerShell** (the default Claude Code shell there).
-
-| | Windows (PowerShell) | macOS / Linux (bash/zsh) |
-|---|---|---|
-| Home dir | `$env:USERPROFILE\.alfred` | `$HOME/.alfred` |
-| Venv python | `~\.alfred\.venv\Scripts\python.exe` | `~/.alfred/.venv/bin/python` |
-| Plugin dir var | `$env:CLAUDE_PLUGIN_ROOT` | `$CLAUDE_PLUGIN_ROOT` |
-| System python | `py -3` or `python` | `python3` |
-
-You usually don't need to hand-build the venv path — **`alfred env` prints the correct one for the
-user's OS**. And **`alfred bootstrap` does the whole environment setup in one cross-platform step**, so
-you rarely touch shell-specific venv commands at all.
-
-## Conventions used below
-
-- **Python env:** the venv python created in Step 1 — get its exact path with `alfred env`. Until the
-  venv exists, use `python3` (macOS/Linux) or `py -3` / `python` (Windows).
-- **CLI:** `<python> "<CLAUDE_PLUGIN_ROOT>/scripts/alfred_cli.py" <subcommand>`. Resolve the plugin dir
-  first — `echo "$CLAUDE_PLUGIN_ROOT"` (bash) or `echo $env:CLAUDE_PLUGIN_ROOT` (PowerShell) — and quote
-  the path so a Windows `C:\Program Files\...` with spaces still works.
-- User data lives in `~/.alfred/` (override: `ALFRED_HOME`); the plugin code is read-only.
+- **CLI:** `<venv python> "<CLAUDE_PLUGIN_ROOT>/scripts/alfred_cli.py" <subcommand>` (`alfred env`
+  prints the venv python). Below, `alfred <sub>` means that.
+- **Home:** `$ALFRED_HOME` or `~/.alfred`. Alfred's data AND career-ops's user files live there
+  (`cv.md`, `config/profile.yml`, `portals.yml`, `modes/_profile.md`, `data/applications.md`,
+  `reports/`). career-ops's code lives in `<home>/vendor/career-ops`.
+- **career-ops scripts:** run from `<home>/vendor/career-ops` with `CAREER_OPS_ROOT=<home>`.
 
 ---
 
-## Step 1 — Environment bootstrap
-**One cross-platform command does it all** — venv, dependency install, and data-dir init:
+## Step 1 — Environment
+`<system python> "<CLAUDE_PLUGIN_ROOT>/scripts/alfred_cli.py" bootstrap` — venv, Python deps,
+`<home>/{config,data,output}`, templates, a blank `.env`. Idempotent.
 
-```
-<system-python> "<CLAUDE_PLUGIN_ROOT>/scripts/alfred_cli.py" bootstrap
-```
+## Step 2 — career-ops engine
+Needs **Node.js 22.13+** and **git** (`node --version`). Missing Node → give the command for their
+OS (`brew install node`, `winget install OpenJS.NodeJS.LTS`, or their distro's package) and let
+them run it; never install system software silently.
 
-`bootstrap` creates `~/.alfred/.venv`, installs `requirements.txt` into it, and runs `init` (creating
-`~/.alfred/{config,data,output}/` + the config templates + a blank `.env`). It is idempotent and runs
-identically on Windows, macOS, and Linux — no shell-specific venv syntax. If `py -3`/`python`/`python3`
-isn't found on Windows, tell the user to install Python from **python.org** and tick *"Add python.exe to
-PATH"* during install, then re-run.
+Then tell the user what it downloads (career-ops at a pinned commit from GitHub, its npm packages,
+and a headless Chromium for CV PDFs and liveness checks — about 200 MB) and, on their yes:
+`alfred careerops-install`. It also copies career-ops's personalization templates and writes
+Alfred's house rules into `modes/_custom.md`.
 
-After it finishes, capture the venv python for later steps with `alfred env`.
+## Step 3 — CV → `cv.md`
+Ask for the master resume `.docx` (or reuse the one already in `<home>/data/`).
+1. `alfred parse-resume <path>` (copies it into `data/`, shows the extracted fields).
+2. `alfred cv-from-docx <path>` → a first `cv.md`.
+3. Reshape `cv.md` into the shape career-ops's checks read, **using only text already in it**:
+   `## Summary`, `## Experience` with each job as `### Company — Location`, a `**Title**` line and a
+   dates line, then bullets; `## Projects`, `## Education`, a heading containing "Skills". Show the
+   user the result and fix what they point out.
+4. Optional: proof points (case studies, metrics, portfolio pieces) the user wants to lead with →
+   `article-digest.md`, in their words.
 
-> Prefer `bootstrap`. Only fall back to manual venv creation
-> (`python -m venv <home>\.venv` on Windows, `python3 -m venv <home>/.venv` on POSIX) if `bootstrap` fails.
+## Step 4 — career-ops profile + portals
+Ask (in chat): full name, email, phone, location + timezone, target roles, years of experience,
+salary target range + currency (+ minimum), countries/cities they will work in, titles to exclude,
+and spend tier (economy / standard / premium). Reuse what `config/profile.yaml` already has.
+Write the answers to a temp JSON in `onboard-write.mjs`'s shape (see
+`vendor/career-ops/AGENTS.md` → First Run, Step 3) and run:
+`alfred careerops-onboard <answers.json>` → `config/profile.yml` + `portals.yml`.
 
-**LibreOffice** (needed for DOCX→PDF): check with `alfred doctor` (it now detects Windows installs off
-PATH too). If missing, give the user the command for **their OS** and let them run it — **do not install
-system software silently**:
-- Windows: `winget install TheDocumentFoundation.LibreOffice`
-- macOS: `brew install --cask libreoffice`
-- Ubuntu/Debian: `sudo apt-get install libreoffice`
+Then personalize `modes/_profile.md` (archetypes, North Star, comp targets, location policy) and
+`modes/_brief.md` (the triage brief) **from cv.md and the user's answers**, so scores are measured
+against the user's targeting, not the template author's. `node doctor.mjs --json` lists any file
+still on the template under `unpersonalized`.
 
-## Step 2 — Resume
-Ask for the path to their master resume `.docx`. Run `alfred parse-resume <path>`. Show the extracted
-fields (name, emails, skills, titles) and the `still_needed` list — you'll fill those gaps in Steps 3–4.
-The resume is copied into `~/.alfred/data/`.
+For Indian design roles, add the companies the user cares about to `portals.yml` (career-ops's
+`discover` mode resolves company names to their ATS boards: `/alfred:alfred-mode discover`).
 
-## Step 3 — Search config → `~/.alfred/config/search.yaml`
-Collect conversationally, then **write the file yourself** (mirror the structure of the committed
-`config/search.example.yaml`, keeping every comment-worthy key):
-- target **roles** / titles, **locations**, **seniority**
-- **blacklist_companies** to skip
-- **caps.applies_per_day** (daily cap)
-- **match_threshold** (default **70**)
-- **`dry_run: true`** — keep it ON for the first pass; do not turn it off.
-Confirm the written values back to the user.
+## Step 5 — Alfred config
+- `config/search.yaml` (mirror `config/search.example.yaml`): roles, locations, seniority,
+  `search_order` (keep `careerops_scan` first), `max_age_days`, blacklist, caps, `min_score`
+  (default 4.0), `apply.auto_submit`, pacing, **`dry_run: true`**.
+- `config/profile.yaml` (mirror `config/profile.example.yaml`): screening answers a form asks —
+  work authorization, notice period, availability, salary expectation, relocation, remote
+  preference, phone, LinkedIn/portfolio URLs, years per skill.
 
-## Step 4 — Screening answers → `~/.alfred/config/profile.yaml`
-These are the things a resume can't supply (mirror `config/profile.example.yaml`). Ask for:
-- **work_authorization / visa**, **notice_period / availability**
-- **salary_expectation**, **willing_to_relocate**, **remote_preference**
-- **phone**, **linkedin_url**, **portfolio_url / github_url**, and any common **screening_answers**.
-Write the file yourself and confirm the values. (None of this is secret — it's fine in chat.)
-
-## Step 5 — Secrets (NEVER in chat)
-For each key below: explain briefly where it comes from, then have the user run
-`alfred set-secret <KEY>` **in their own terminal**. Give them the exact command (resolve
-`${CLAUDE_PLUGIN_ROOT}` to an absolute path). Do not proceed to detect the chat id until the token is set.
-
-| Key | Where the user gets it |
+## Step 6 — Secrets (never in chat)
+| Key | Where it comes from |
 |---|---|
-| `TELEGRAM_BOT_TOKEN` | Create **their OWN** bot in `@BotFather` (~2 min) → copy the token. Tell them to use **Alfred** as the display name; the `@username` must be globally unique and end in `bot`, so suggest `alfred_<theirname>_bot` (plain `alfred` is taken). Neither name is stored anywhere — only the token is. **Each user must create their own bot** — a shared bot's `getUpdates` queue is consumed per-bot, so taps would be delivered to the wrong machine and the approval safety model breaks. |
-| `GMAIL_ADDRESS` | A **dedicated** job-hunt Gmail (not their personal inbox). |
-| `GMAIL_APP_PASSWORD` | In that Gmail: enable 2-Step Verification → create an **App Password** for "Mail" (SMTP). Not their normal password. |
-| `HUNTER_API_KEY` **or** `APOLLO_API_KEY` *(optional)* | Hunter.io free tier or Apollo → API key. Optional; leave blank if unused. |
+| `GMAIL_ADDRESS` | A dedicated job-hunt Gmail, not the personal inbox. |
+| `GMAIL_APP_PASSWORD` | That Gmail → 2-Step Verification on → App Password for "Mail". |
+| `HUNTER_API_KEY` / `APOLLO_API_KEY` *(optional)* | Hunter.io or Apollo. |
 
-Remind them: `TELEGRAM_CHAT_ID` is **auto-detected** in Step 6 — they don't set it by hand.
+Give the exact `alfred set-secret <KEY>` command for each.
 
-## Step 6 — Telegram chat id
-Once `TELEGRAM_BOT_TOKEN` is set, tell the user to open Telegram and **send any message to their bot
-once**. Then run `alfred detect-telegram-chat-id` — it reads `getUpdates`, extracts `chat.id`, and
-writes `TELEGRAM_CHAT_ID`. If it reports no message yet, have them message the bot and re-run.
-
-## Step 7 — Notion + browser (MCP — no `.env`)
-These are authorized **in Claude Code**, not via secrets:
-- **Notion:** connect the **Notion** connector (`/mcp` or connector settings). The tracker agent uses the
-  `notion-*` MCP tools; OAuth is per-user.
-- **LinkedIn / browser:** browser sources (Wellfound, Indeed, LinkedIn) need a browser that carries the
-  user's **signed-in session**. Alfred uses whichever the host provides — the app's own built-in browser
-  first, else Playwright MCP or another browser MCP pointed at their existing profile. Tell them to stay
-  signed in to those sites in that browser. **No password is ever stored.** If the session has no browser
-  at all, those sources are skipped with a note and the API/RSS sources still run — that is a supported
-  setup, not a broken one.
+## Step 7 — Aside
+Alfred's only browser. `aside --version` (or `~/.local/bin/aside`). Missing → point the user to
+https://aside.com; without it LinkedIn/Indeed/Wellfound and portal applying are skipped, and the
+zero-token sources still run. Ask them to stay signed in to LinkedIn, Indeed and Wellfound in
+Aside. No password is ever stored.
 
 ## Step 8 — Verify
-Run `alfred doctor` and show the checklist. Resolve any ❌ (required) items and re-run until it reports
-**READY**; ⚠️ advisories (LibreOffice, optional keys, Notion-via-MCP) are fine to defer. Finish by
-reminding the user that **dry_run stays ON** for the first pass — a full `/alfred-run` will prepare
-everything but send/submit nothing — and that they can run any single stage with `/alfred-find`,
-`-research`, `-tailor`, `-track`, `-approve`, or `-apply`.
+`alfred doctor` until **READY** (⚠️ advisories can wait). Then explain the flow:
+`/alfred:alfred-run` (find → verify → evaluate → CV → review), `/alfred:alfred-approve` to decide,
+`/alfred:alfred-apply` to apply — and that **dry_run stays ON** until they have watched a full pass.

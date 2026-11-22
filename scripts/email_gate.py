@@ -1,13 +1,9 @@
-"""Alfred · email_gate — the ONE place a "cleared" tap becomes a sent email.
+"""Alfred · email_gate — the ONE place a "cleared" email decision becomes a sent email.
 
-Tapping 📧 Send records a decision; it does not send. Something still has to pick that
-decision up, check every guardrail, and hand the message to SMTP. That used to be the
-application agent alone — which meant the email waited for the next time a human ran
-Alfred on a machine with a browser. Tap Send, close the laptop, and the email sat there.
-
-So the step lives here, in one auditable function that both the always-on worker and the
-application agent call, sharing one idempotency record so the same email cannot go out
-twice.
+Clearing an email (`review_store.py email-send <id>`, or `approve <id> --email`)
+records a decision; it does not send. The application agent calls perform_send(),
+which checks every guardrail and hands the message to SMTP, with one idempotency
+record so the same email cannot go out twice.
 
 Every guardrail the application agent enforces is enforced here, in this order:
 
@@ -18,8 +14,8 @@ Every guardrail the application agent enforces is enforced here, in this order:
     daily cap      -> caps.emails_per_day from config/search.yaml
     dry_run        -> config/search.yaml; logs what WOULD go, connects to nothing
 
-and the user is told the outcome either way — a refusal the user cannot see is the same
-bug as an email that silently never sends.
+and the outcome is returned either way — a refusal nobody sees is the same bug as an
+email that silently never sends.
 
 The portal channel is NOT here and cannot be: it needs the signed-in browser on the
 user's own machine. This module is the email half only.
@@ -34,16 +30,15 @@ import paths  # single source of truth for paths (§4)
 import bounce_check
 import daily_caps
 import email_send
-import telegram_bot as tb
+import review_store as tb
 
 EMAIL_SENT = os.path.join(paths.data_dir(), "email_sent.json")
 EMAIL_FAILURES = os.path.join(paths.data_dir(), "email_send_failures.json")
 
 _DEFAULT_EMAIL_CAP = 10  # only used if config/search.yaml cannot be read
 
-# A worker retries on a loop, so a permanently broken send (bad app password, refused
-# recipient) would otherwise re-notify every cycle forever. Three attempts, then it
-# stays quiet until a human clears the failure.
+# A permanently broken send (bad app password, refused recipient) is tried three
+# times across runs, then stays refused until a human clears the failure.
 MAX_SEND_ATTEMPTS = 3
 
 
@@ -62,7 +57,7 @@ def record_sent(job_id: str, status: str, to: Optional[str] = None) -> bool:
     """Record that `job_id`'s email left (or was dry-run). Idempotent -> False if set.
 
     A FAILED attempt is deliberately NOT recorded: the user is told what broke and the
-    draft is kept, so fixing the cause and tapping again must be able to actually send.
+    draft is kept, so fixing the cause and running again must be able to actually send.
     """
     store = tb._read_json(EMAIL_SENT, {})
     if not isinstance(store, dict):
@@ -129,8 +124,7 @@ def _refusal(job_id: str, reason: str, **extra: Any) -> Dict[str, Any]:
     return {"job_id": job_id, "sent": False, "reason": reason, **extra}
 
 
-def perform_send(job_id: str, job: Optional[Dict[str, Any]] = None,
-                 notify: bool = True) -> Dict[str, Any]:
+def perform_send(job_id: str, job: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Send `job_id`'s approved email if every guardrail allows it.
 
     Returns a result record; `sent` is True only when SMTP actually accepted it.
@@ -146,10 +140,8 @@ def perform_send(job_id: str, job: Optional[Dict[str, Any]] = None,
                         else f"user {decision} this email")
 
     if tb.is_paused():
-        return _refusal(job_id, "/pause is set — nothing leaves until you /resume")
+        return _refusal(job_id, "/pause is set — nothing leaves until you resume")
 
-    # Refused BEFORE send_safe rather than reading its EMAIL_PAUSED status, so a worker
-    # polling every minute refuses quietly instead of sending the same notice each cycle.
     if bounce_check.is_email_paused():
         return _refusal(job_id, "email channel throttled after bounces "
                                 "— clear data/email_paused.flag")
@@ -184,12 +176,6 @@ def perform_send(job_id: str, job: Optional[Dict[str, Any]] = None,
     else:
         attempts = record_failure(job_id, result.get("error") or result.get("reason"))
 
-    if notify:
-        try:
-            tb.send_result_notice(job or tb.draft_job(job_id), result)
-        except Exception:  # noqa: BLE001 — a failed notice must not hide the send result
-            pass
-
     return {"job_id": job_id, "sent": status == "SENT", "status": status,
             "to": result.get("to"), "attachments": result.get("attachments"),
             "missing_attachments": missing, "error": result.get("error"),
@@ -199,8 +185,7 @@ def perform_send(job_id: str, job: Optional[Dict[str, Any]] = None,
 def cleared_unsent() -> List[str]:
     """Jobs the user cleared for sending that have not been sent yet.
 
-    This is what a worker that was offline when the tap landed comes back to. It reads
-    the decision store rather than a queue, so it survives any run that drained one.
+    Reads the decision store rather than a queue, so it survives any run that drained one.
     """
     store = tb._read_json(tb.EMAIL_DECISIONS, {})
     if not isinstance(store, dict):
@@ -210,12 +195,10 @@ def cleared_unsent() -> List[str]:
                   and already_sent(job_id) is None)
 
 
-def send_cleared(notify: bool = True) -> List[Dict[str, Any]]:
+def send_cleared() -> List[Dict[str, Any]]:
     """Send every cleared-but-unsent email.
 
-    Safe to call on a loop. A success drops the job for good; a refusal is quiet and
-    re-evaluated next cycle, which is what lifts a job automatically when the cap rolls
-    over or /pause is cleared; a failure is counted and gives up after MAX_SEND_ATTEMPTS
-    rather than notifying forever.
+    A success drops the job for good; a refusal is re-evaluated next run (the cap rolls
+    over, /pause is cleared); a failure is counted and gives up after MAX_SEND_ATTEMPTS.
     """
-    return [perform_send(job_id, notify=notify) for job_id in cleared_unsent()]
+    return [perform_send(job_id) for job_id in cleared_unsent()]

@@ -1,3 +1,5 @@
+> **Historical (pre-2.0).** This describes Alfred before the career-ops merge (Telegram, Notion, cover letters). The current design is in `README.md`, `RUNBOOK.md` and `agents/`.
+
 # Alfred — Build Spec (v2, Claude-Code-native)
 
 > Project & repo name: **Alfred** (`alfred`).

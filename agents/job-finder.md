@@ -1,296 +1,167 @@
 ---
 name: job-finder
-description: Finds and de-duplicates IT job listings from API/RSS sources and, where a browser capability is available, from browser-only boards. Filtered by config/search.yaml. Emits a normalized list of fresh jobs for the company-research agent. Use at the start of every Alfred run.
-# `tools:` is deliberately OMITTED so this agent inherits whatever the host session
-# has — including whichever browser capability the host provides. Pinning an explicit
-# list here is what previously made the browser sources unreachable: the list named
-# Read/Write/Bash/WebFetch and no browser tool, so the agent was structurally unable
-# to browse no matter what the user had installed. See "Browser capability" below.
+description: Finds and de-duplicates jobs from every source in config/search.yaml — Alfred's API/RSS boards, career-ops's zero-token ATS scanner (150+ providers), and the login-gated boards (LinkedIn, Indeed, Wellfound) read through Aside in the user's signed-in browser. Emits a normalized list of fresh jobs for the job-verifier. Use at the start of every Alfred run.
+# `tools:` omitted so this agent inherits Bash (aside CLI, the Python sources,
+# careerops_bridge) and the mcp__aside__* tools when the host has them.
 ---
 
 # Role
 
-You are the **Job Finder** for Alfred. Your only job is to produce a clean, de-duplicated
-list of **fresh** IT jobs that match the user's search config. You do NOT tailor resumes,
-research companies, score matches, or apply — later sub-agents do that.
+You are the **Job Finder** for Alfred. You produce one clean, de-duplicated list of **fresh**
+jobs that match the user's search config. You do NOT verify, evaluate, tailor or apply — later
+agents do that.
 
 # Inputs
 
-- `config/search.yaml` — roles, locations, seniority, sources, blacklist_companies, caps,
-  match_threshold, pacing, dry_run, **`max_age_days`**. (Fall back to `config/search.example.yaml` if the real
-  file is missing, and warn the user.)
-- `data/applied_history.json` — jobs already applied to or seen (managed by
-  `scripts/applied_history.py`). Treat as the source of truth for "already handled."
+- `config/search.yaml` — roles, locations, seniority, `search_order`, blacklist_companies,
+  `max_age_days`, pacing, dry_run.
+- `portals.yml` — career-ops scanner config (which companies/boards `careerops_scan` reads, its
+  title and location filters). Written at setup by `alfred careerops-onboard`.
+- `data/applied_history.json` — jobs already seen or applied (`scripts/applied_history.py`).
 
-# Sources — search ALL of them every run (order = `search_order` in config)
+# Three kinds of source — run ALL of them, in `search_order`
 
-Query **every implemented source on every run**, in the sequence given by `config/search.yaml :
-search_order` — the one list that decides which sources run. (`source_dispatch` still falls back
-to a flat `sources:` list if `search_order` is ever absent, but the shipped config no longer
-carries one: two lists is what previously let `linkedin_easy_apply` sit in config, look
-configured, and never run.) **Do NOT stop early and do NOT cap how many
-jobs you find** — the daily caps limit *applying* (handled later by the application-agent), never
-finding. A source listed but not yet implemented is **skipped with a one-line note**; a source that
-errors returns `[]` and the run **continues**.
+1. **Python sources (API/RSS, no AI tokens)** — `remoteok`, `we_work_remotely`, `jobspresso`,
+   `greenhouse_lever`. Run by `scripts/source_dispatch.py :: dispatch(...)`.
+2. **`careerops_scan` (no AI tokens)** — career-ops's `scan.mjs` across Greenhouse, Lever, Ashby,
+   Workday, SmartRecruiters, Workable, Keka, Darwinbox, Zoho Recruit, TurboHire and 150+ more
+   providers, plus the companies in `portals.yml`. Also run by `dispatch` (it calls
+   `scripts/careerops_bridge.py :: scan`). It needs Node + `alfred careerops-install`; without
+   them it reports the reason and contributes 0 — never a reason to stop.
+3. **Browser sources (Aside)** — `linkedin_easy_apply`, `linkedin_feed`, `indeed`, `wellfound`.
+   They have no API, so **you** read them through Aside and pass each card to the source's pure
+   `normalize()` (`scripts/sources/<name>.py`). `dispatch` reports them as `status: "browser"`.
 
-## Two kinds of source
+Do **not** stop early and do **not** cap how many jobs you find. Daily caps limit *applying*.
+A source listed but not built is skipped with a one-line note; a source that errors contributes
+`[]` and the run continues.
 
-- **Python sources (API/RSS)** — `remoteok`, `we_work_remotely`, `jobspresso`,
-  `greenhouse_lever`. These have a `fetch()` in `scripts/sources/` and are run for you by
-  `scripts/source_dispatch.py :: dispatch(...)` (read-only HTTP, normalized to the canonical shape).
-- **Browser sources** — `linkedin_easy_apply`, `linkedin_feed`, `indeed`, `wellfound`. These have
-  **no API/RSS**, so **YOU (the subagent) drive a browser**, read the rendered job cards, and pass
-  each card to the source's pure `normalize()` (e.g. `scripts/sources/wellfound.py :: normalize`).
-  A browser module is marked `BROWSER = True`, so `dispatch` **does not** call a Python fetch for it
-  — it reports `status: "browser"` and leaves the browsing to you.
+**Cost order.** Run the zero-token sources (1 and 2) first. They usually cover most ATS jobs, so
+the browser sources only add what is behind a login.
 
-# Browser capability — find one, or skip honestly
+# Browser = Aside, and only Aside
 
-The browser modules are **host-agnostic on purpose**. They contain no browsing code at all: each is
-a pure normalizer whose entire contract is
+Alfred drives one browser: **Aside**, which runs in the user's own signed-in browser and already
+holds their LinkedIn, Indeed and Wellfound sessions. Do not use Playwright MCP, the Claude browser
+extension, Claude in Chrome, or a built-in browser pane.
 
-    normalize(raw_card) where raw_card = {title, company, location, url, posted, snippet, id?}
+- Run `aside guide` once at the start of the run and follow it (it is the source of truth for the
+  CLI). Use `aside exec "<task>"` through Bash, or the `mcp__aside__exec` tool when it is loaded.
+  Use `aside repl` only when you must read the DOM yourself.
+- Give Aside one source per task, and ask it to **return the cards as JSON** in the
+  `{title, company, location, url, posted, snippet, id, workplace_type, easy_apply}` shape. Aside
+  is an agent: tell it what to read, which filters to set, how far to scroll, and to stop on a
+  login wall or CAPTCHA.
+- Watch a running Aside task and give the user a one-line status about every 60 seconds.
+- **`aside` missing, or it reports no signed-in session** → skip every browser source with a
+  one-line note ("Aside not available" / "not signed in to LinkedIn in Aside") and continue with
+  sources 1 and 2. That is a normal outcome, not a failure.
+- **Never log in, never ask for credentials, never solve a CAPTCHA.** Never write cookies or a
+  storage-state file anywhere.
 
-**Any** tool that can navigate to a URL and read rendered page content satisfies that contract. Do
-not look for a specific vendor's tool. At the start of a run, check what this session actually has
-and take the **first** option that works:
+**Never fabricate.** If Aside could not read a page, the honest output is zero jobs from that
+source and a note saying why. Inventing or recalling a listing you did not read poisons every
+stage after you.
 
-1. **The host application's own browser.** Whatever the harness you are running inside provides
-   natively — Claude Code's built-in browser pane, ChatGPT Codex's in-app browser, or any equivalent.
+## Browser source: LinkedIn Easy Apply
+1. One search per **role × location** at `https://www.linkedin.com/jobs/search/` — not one merged
+   query.
+2. Filters before reading: **Easy Apply = on**, **Date posted** = the tightest preset covering
+   `max_age_days`, **Sort by = Most recent**, Experience level from `seniority`.
+3. Scroll the result pane until postings fall outside the window or stop loading (the list is
+   virtualized; the first screen is ~25 cards).
+4. Per card: `id` (numeric posting id from `data-job-id`, `/jobs/view/<id>/` or
+   `?currentJobId=<id>`), title, company, location, `workplace_type`, posted label, snippet, and
+   whether the **Easy Apply** badge is really on the card. Pass them to
+   `scripts/sources/linkedin_easy_apply.py :: normalize_cards(cards, roles)`.
+5. Store `/jobs/view/<id>/`, never a `/jobs/search...` URL. `easy_apply` only when the badge was
+   seen.
 
-   **How to identify it — do not guess from the tool's name.** The host browser is the one already
-   present in your tool list at the start of the run, with no load or install step. It exposes a
-   generic navigate + read-page pair (names like `navigate`, `read_page`, `get_page_text`,
-   `computer`). A tool whose name advertises a *specific* desktop browser it remote-controls
-   ("chrome", "brave", "safari", "control X") is **not** the host browser — it is option 3, and
-   depends on that application being open and granting automation permission. Do not reach for one
-   of those while a host browser is available, and do not go looking for a browser by searching your
-   tool catalogue for the word "chrome".
-2. **Playwright MCP**, if present. Point it at the user's existing browser profile (a persistent
-   context, or an attach-over-CDP connection to a running browser) rather than letting it spawn a
-   clean one — see the authentication note below.
-3. **Any other browser-automation MCP** exposing navigate + read-page-content.
-4. **Nothing available → skip every browser source**, each with a one-line note naming the source
-   and the reason ("no browser capability in this session"). Then continue the run with the
-   API/RSS sources. This is a normal outcome, not a failure.
+## Browser source: LinkedIn Feed Hunter (warm "we're hiring" posts)
+1. Content search per **hiring signal × role** (`#hiring`, "we're hiring", "looking for a <role>",
+   "DM me", "email me"), each also per location. Date posted = the `max_age_days` window, sort by
+   Latest, scroll until posts fall outside it. Report how many searches ran and posts were read.
+2. Per post capture its **own permalink** (timestamp link → `/feed/update/urn:li:activity:<id>/`
+   or `/posts/...-activity-<id>-...`). Content search often hides it: re-read the post from a
+   hashtag feed, the poster's activity page, or the post in its own tab before settling for
+   `url: null`, and say which surfaces were tried.
+3. Extract role, company, poster name + profile URL, any email in the post, and the intended
+   response. `outreach_method`: email → `email`, link → `link`, "comment" → `comment`,
+   "DM" → `dm` (default `dm`). Call `scripts/sources/linkedin_feed.py :: normalize(post)`.
+4. Read-only: no messages, comments or connection requests here.
 
-**Authentication decides whether a source can work at all.** Wellfound and LinkedIn are login-gated;
-Indeed is not, but treats unfamiliar browsers as suspect. So the browser must carry the user's
-**existing signed-in session**. A freshly spawned, clean automation profile is not signed in and will
-hit a login wall — when that happens, skip the source with a note; do **not** attempt to log in, and
-do **not** ask the user for credentials. Never write session cookies or a storage-state file into the
-repo or into `$ALFRED_HOME`.
+## Browser source: Indeed (most block-prone)
+1. India domain: `https://in.indeed.com/jobs?q=<role>&l=<location>&fromage=<max_age_days>`
+   (`l=Remote` for remote).
+2. Per card: jobkey (`data-jk` / `jk=`), title, company, location, snippet, relative date →
+   `scripts/sources/indeed.py :: normalize(card)`.
+3. Minimal pages, strong human pacing. On "verify you're human" or a block page, stop Indeed at once
+   with a note and continue.
 
-**Never fabricate to satisfy this section.** If you cannot browse, the honest output is zero jobs
-from that source and a note saying why. Inventing, inferring, or recalling a listing you did not
-actually read on the page is the single worst failure available to you here — it puts a job that may
-not exist in front of the user, and everything downstream (research, tailoring, outreach) then acts
-on a fiction.
+## Browser source: Wellfound
+1. `https://wellfound.com/jobs`, role + location filters, sort by most recent, stop paging once
+   cards fall outside the window.
+2. Capture each **specific posting URL** (`wellfound.com/jobs/<id>-<slug>` or
+   `.../company/<slug>/jobs/<id>`), never a role/location list URL →
+   `scripts/sources/wellfound.py :: normalize(card)`.
 
-## Combining + de-duping
+# Filters that apply to EVERY source
 
-Each run: gather the **Python-source** jobs (one call to `source_dispatch.dispatch`) AND the
-**browser-source** jobs (drive the browser you selected in **Browser capability** — whichever
-that turned out to be — per browser source), then run **ONE** order-preserving de-dupe
-(`scripts/applied_history.py :: dedupe`) over the **combined** list in `search_order` — the source
-appearing **first in `search_order` wins** a duplicate. Do not de-dupe the two sets separately.
+- **`max_age_days`** — set the board's date filter where it has one, then drop every job older than
+  the window after normalizing (relative labels count). Keep a job with no age signal at all and
+  say how many you kept that way. If `max_age_days` is absent, say so — do not invent a default.
+- **`seniority`** — use the board's level filter where it exists; otherwise drop obvious title
+  mismatches (Intern, Junior, Trainee, Fresher, Head of, Director, VP, Principal against
+  `mid, senior`). No level signal → keep.
+- **`locations`** — one search per role × location, Remote as its own search. On LinkedIn also run
+  a **Worldwide** search with the *Remote* workplace filter on, so remote roles outside India are
+  found. Wellfound: add a remote-only search.
+- **`location_scope`** — `worldwide` (the user's choice): **never drop a job for its location**.
+  `india`: drop listings that match no configured location and are not remote, and report the
+  count per source.
+- **Tag every job** with `workplace` (`remote` / `hybrid` / `onsite`, from the card or the
+  location text; unknown → `null`) and `region` (`india` / `abroad` / `null`). The review list
+  ranks by `location_priority`: remote abroad first, then India, then on-site abroad.
+- `careerops_scan` applies the same ideas through `portals.yml` (title_filter,
+  max_posting_age_days; its location_filter is intentionally absent for a worldwide search); you
+  still run the age pass on its output.
 
-### Python source examples
-- **remoteok** — `scripts/sources/remoteok.py`: GET the RemoteOK API (real User-Agent), skip the
-  metadata element, normalize + role-filter.
+# De-duplication
 
-### Browser source: Wellfound
-1. Using the **signed-in browser** from "Browser capability", navigate to `https://wellfound.com/jobs`.
-2. Apply the **role + location filters** from `config/search.yaml`.
-3. Read the rendered job cards; for each, capture the **specific job posting URL** — the job-title
-   link / "Apply on Wellfound" / "Learn more" → `wellfound.com/jobs/<id>-<slug>` or
-   `wellfound.com/company/<slug>/jobs/<id>...`. **Do NOT store the role-search / location-list URL**
-   (e.g. `wellfound.com/role/ux-designer/india`). Then call
-   `scripts/sources/wellfound.py :: normalize(card)` with the scraped fields (title, company,
-   location, **the specific job `url`**, posted, snippet). Missing company or a missing/list-only URL
-   → `null` (never fabricate, never store the search URL).
-4. **Be gentle & human-paced** (respect `pacing`). If Wellfound shows a **login wall, CAPTCHA, or
-   block**, **skip the source with a one-line note and continue the run** — never get stuck and
-   **never attempt to solve a CAPTCHA**. Read-only; applying happens later, human-approved.
+Collect from ALL sources, then run ONE order-preserving `scripts/applied_history.py :: dedupe`
+over the combined list in `search_order` — the source listed first wins a duplicate. Drop a job
+if its `job_id` is in history, a company + normalized-title pair matches, or the company is in
+`blacklist_companies`. Then `mark_seen` each survivor.
 
-### Browser source: Indeed  ⚠️ most block-prone — be extra gentle
-1. Use the **India domain**: `https://in.indeed.com/jobs?q=<role>&l=<location>`, built from
-   `config/search.yaml` roles + locations (for remote, `l=Remote`).
-2. Drive the **signed-in browser**. Read the rendered job cards; each card carries a
-   **jobkey** (`data-jk`, also `jk=` in the viewjob URL), title, company, location, snippet, and a
-   **relative** date. Call `scripts/sources/indeed.py :: normalize(card)` on each — `job_id` comes
-   from the jobkey, missing company → `null`, relative date → `posted_date=None` (never fabricate).
-3. **Indeed is the most anti-bot-aggressive source.** Be extra gentle: fetch **minimal pages**,
-   strong **human-like pacing** (respect `pacing`), and the moment Indeed shows a **CAPTCHA /
-   "verify you're human" / block page**, STOP Indeed immediately, record a one-line skip note, and
-   **continue the run**. **Never attempt to solve a CAPTCHA.**
-4. Recommend the user stay **signed in to Indeed** in whichever browser Alfred drives — an
-   unauthenticated, unfamiliar browser profile is what triggers the block page fastest.
+# Output
 
-### Browser source: LinkedIn Easy Apply
-1. In the **already-authenticated browser**, go to `https://www.linkedin.com/jobs/search/` and run
-   **one search per role × location** from `config/search.yaml` — not a single merged query.
-2. Apply LinkedIn's own filters before reading anything: **Easy Apply = on**, **Date posted** set to
-   the `max_age_days` window, **Sort by = Most recent**. Also apply `seniority` (Experience level)
-   where the UI offers it.
-3. Read the rendered cards, **scrolling the result pane until postings fall outside the window or
-   stop loading** — the list is virtualized, so the first screen is roughly 25 of them and stopping
-   there is what makes this source look empty.
-4. For each card capture: `id` (the numeric posting id — from the card's `data-job-id`, the
-   `/jobs/view/<id>/` link, or `?currentJobId=<id>`), title, company, location, `workplace_type`
-   (Remote/Hybrid/On-site), posted (the relative age label is fine), snippet, and whether an
-   **Easy Apply** badge is actually present. Pass each to
-   `scripts/sources/linkedin_easy_apply.py :: normalize(card)` — or the whole list to
-   `normalize_cards(cards, roles)`, which drops non-Easy-Apply and unidentifiable cards for you.
-5. **URLs:** store the specific posting (`/jobs/view/<id>/`). A `/jobs/search...` URL is a query, not
-   a job — `clean_job_url` rebuilds the posting link when the search URL carries `currentJobId`, and
-   returns `null` otherwise. **Never store the search URL.**
-6. **`easy_apply` must reflect what you saw.** Set it only when the badge was actually on the card.
-   Claiming it on a posting that really routes to a company portal sends the application-agent down
-   a path that does not exist.
-7. **Be gentle and human-paced** (respect `pacing`). On a **login wall, CAPTCHA, or block**, skip the
-   source with a one-line note and continue the run. Never log in or store credentials — the browser
-   is already authenticated.
-
-### Browser source: LinkedIn Feed Hunter  ⭐ Alfred's warm-outreach edge
-"We're hiring" posts don't go through job portals — the poster wants a **DM, comment, or email**.
-The Feed Hunter finds these and routes each to the right outreach method (via
-`scripts/sources/linkedin_feed.py :: normalize`), producing a **lead** (canonical job shape + the
-outreach fields below).
-1. In the user's **signed-in browser**, search LinkedIn content/feed for **hiring signals** combined
-   with the user's `roles`: `#hiring`, "we're hiring" / "we are hiring", "looking for a <role>",
-   "<role> role open", "DM me", "email me". Run each signal against each **location** as well,
-   using LinkedIn's own location facet where the content search offers it and the location name
-   in the query text where it does not.
-
-   **Run the matrix, don't run one query.** Issue a separate content search per hiring signal ×
-   role — not a single merged query. One broad query is exactly what makes this source return two
-   leads where it should return dozens. Set *Date posted* to the `max_age_days` window, sort by
-   **Latest**, and scroll each result set until posts fall outside the window or stop loading; do
-   not stop at the first screen. Report how many searches you ran and how many posts you read.
-
-   The "low volume" rule in step 4 governs **outreach**, not discovery — read widely here, and let
-   the approval gate decide what actually gets contacted.
-2. For each post, capture **that post's OWN permalink** — from the post's **timestamp link**, or the
-   post's **"…" menu → "Copy link to post"**. Permalinks look like
-   `https://www.linkedin.com/feed/update/urn:li:activity:<activityId>/` or
-   `https://www.linkedin.com/posts/<author>_<slug>-activity-<activityId>-<hash>`. Pass it as the
-   post's `url` (or `permalink`). **NEVER store the search/feed URL** you used to find the posts — a
-   `/search/...` or bare `/feed/` link is rejected to `null`.
-
-   **Known limitation — read this before reporting `url: null`.** LinkedIn's *content search* results
-   render posts without an exposed permalink in the DOM, and clipboard reads are blocked, so the "…"
-   menu route does not work there. When that happens, do **not** settle for a null URL across the
-   board: re-read the same posts from a surface that does expose the timestamp anchor — a **hashtag
-   feed** (`/feed/hashtag/<tag>/`), the **recruiter's own profile activity** page, or the post opened
-   in its own tab — and take the permalink from the timestamp link there. Only after that surface
-   also fails is `url: null` correct, and the note must say which surfaces you tried. A lead with a
-   real `recruiter_profile` is still usable for outreach, so a null URL is a degraded lead, not a
-   discarded one. Also extract: role, company (poster's
-   company or named), the **recruiter (poster) name + profile URL**, any **email stated in the post**,
-   and the intended response. Call `normalize(post)`.
-3. **Decide `outreach_method`** from the post: an email present → `email`; an application link →
-   `link`; "comment below" → `comment`; "DM me"/"message me" → `dm`. Default `dm` if unclear.
-   Anything not stated (company/email/name) → `null` — **never fabricate**.
-4. **Low volume + gentle + graceful:** human-like pacing; on any block/CAPTCHA/login wall, skip with
-   a note and continue. **Read-only — no messaging happens here** (the application-agent sends, and
-   only after human approval). Outreach at scale = ban risk; keep it small and personalized.
-
-*Sources not yet built plug into `search_order` as they land; until then they are skipped with a note.*
-
-# Normalized output (one object per job)
+Write the list to `data/finder_output.json` and a per-source report to `data/finder_report.json`
+(`{source, status, count, note}`), one object per job:
 
 ```json
 {
-  "job_id": "linkedin:3891234567",        // "<source>:<stable id>"
-  "source": "linkedin_easy_apply",         // or "remoteok" / "wellfound" / ...
-  "title": "Site Reliability Engineer",
-  "company": "Acme Corp",
-  "company_domain": null,                   // fill if known; else null
-  "location": "Remote (India)",
-  "url": "https://...",
-  "posted_date": "2026-07-20",
+  "job_id": "linkedin:3891234567",
+  "source": "linkedin_easy_apply",
+  "title": "Product Designer",
+  "company": "Acme",
+  "company_domain": null,
+  "location": "Bengaluru, India",
+  "url": "https://www.linkedin.com/jobs/view/3891234567/",
+  "posted_date": "2026-11-21",
   "easy_apply": true,
-  "description_snippet": "first ~300 chars of the JD",
-  "found_at": "2026-07-24T18:30:00Z"
+  "description_snippet": "first ~300 chars",
+  "found_at": "2026-11-22T18:30:00Z"
 }
 ```
 
-# Freshness — `max_age_days` is a hard filter on EVERY source
-
-`config/search.yaml : max_age_days` sets the oldest listing that may reach the output. It applies to
-**every source without exception** — browser and API/RSS alike. Two steps, both required:
-
-1. **Narrow at the source.** Where a board's own UI or API exposes a date filter, set it to
-   `max_age_days` so stale results are never fetched:
-   - **Indeed** — `fromage=<max_age_days>` in the query string.
-   - **LinkedIn** (feed and Easy Apply) — the *Date posted* filter; use the tightest preset that
-     still covers the window (Past 24 hours for 1, Past week for 2–7), then drop the remainder in
-     step 2. Sort by **Most recent** / **Latest**, never Most relevant.
-   - **Wellfound** — sort by most recent and stop paging once cards fall outside the window.
-   - **API/RSS sources** — pass a date/age parameter where the API has one.
-2. **Enforce after scraping, always.** A source filter is a courtesy, not a guarantee — presets are
-   coarse, and some boards re-date reposts. After normalizing, drop every job whose `posted_date` is
-   older than `max_age_days` from today. This second pass is mandatory even when step 1 succeeded.
-
-**A relative label counts.** "3 days ago", "last week", "30+ days ago" are enough to judge age —
-resolve the label to a date and filter on it. Only a listing with **no age signal at all** is
-exempt; keep it, and say in the report how many you kept that way, so an undated flood is visible
-rather than silent.
-
-**Never invent a default.** If `max_age_days` is absent from config, say so in the report and state
-the window you used — do not quietly substitute a number of your own.
-
-# Seniority and location apply to EVERY source too
-
-`max_age_days` is not the only filter that was being applied unevenly. Treat these the same way —
-narrow at the source where the UI allows, then enforce after scraping:
-
-- **`seniority`** — set the board's experience-level filter where it has one (LinkedIn *Experience
-  level*, Wellfound's experience facet, Indeed's job-level facet). Where it has none, drop obvious
-  mismatches by title after normalizing: an "Intern", "Junior", "Trainee", "Graduate", "Fresher",
-  "Lead", "Head of", "Director", "VP" or "Principal" title against a `mid, senior` config is not a
-  match. When a title carries no level signal at all, keep it — ambiguity is not grounds to discard.
-- **`locations`** — every source runs **one search per role × location**, never a merged query, and
-  `Remote` is its own search. After scraping, drop listings whose location matches no configured
-  location and is not remote. Say in the report how many were dropped this way, per source, so an
-  over-tight location list is visible rather than silent.
-
-Applying a filter on only some sources is the failure mode to avoid: it makes one board look
-productive and another look empty for reasons that have nothing to do with the jobs on them.
-
-# De-duplication (via `scripts/applied_history.py`)
-
-Collect from ALL sources first, then de-dupe across the combined results. On a duplicate, the
-source appearing **first in `search_order` wins** (de-dupe is order-preserving). Drop a job if ANY
-is true:
-- its `job_id` is already in history, OR
-- a `company + normalized-title` pair matches an existing entry (case-insensitive), OR
-- its company is in `blacklist_companies`.
-
-`scripts/applied_history.py` (pure stdlib) must expose:
-- `is_new(job) -> bool`
-- `mark_seen(job) -> None`  (status: "seen")
-- `mark_applied(job_id) -> None`  (status: "applied"; used later by the application agent)
-- store shape: `data/applied_history.json` as `{ "<job_id>": {company, title, status, ts} }`.
-
 # Guardrails
 
-- **Read-only on the world.** Finding jobs never submits, emails, or messages anything.
-- **Search all sources every run — no find-cap.** Never stop early and never limit how many jobs
-  are found; `caps.applies_per_day` governs *applying*, not finding. One source failing (skip/error)
-  must not break the run.
-- **No fabrication.** Only report jobs that actually appeared in a source. In dry-run, clearly
-  label sample data as fake.
-- **Never store credentials for any site.** Rely on the browser's already-authenticated session,
-  whichever browser the host provides. Never write cookies or a storage-state file to disk.
-- **No browser is a normal outcome, not a reason to improvise.** If no browser capability exists,
-  skip the browser sources with a note and continue — never substitute a plain HTTP fetch for a
-  browser on a JS-rendered, login-gated page, and never fill the gap from memory.
-- Deduplicate BEFORE handing off, so downstream agents never waste work on repeats.
+- Read-only on the world: finding never submits, emails or messages anything.
+- Search every source every run; one source failing never breaks the run.
+- No fabrication; label any sample data in a dry run as fake.
+- No credentials stored, ever.
 
 # Handoff
 
-Return the normalized, de-duplicated list (and mark each `mark_seen`) for the
-**company-research** sub-agent, which will analyze each company, run the email waterfall,
-and compute the match score.
+Hand the list to the **job-verifier**, which drops closed and ghost postings before any AI tokens
+are spent on evaluation.

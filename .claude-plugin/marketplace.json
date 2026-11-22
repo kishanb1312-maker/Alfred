@@ -1,15 +1,23 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "alfred",
-  "owner": { "name": "Alfred" },
+  "owner": {
+    "name": "Alfred"
+  },
   "description": "Alfred — a warm, human-in-the-loop job-application assistant packaged as a Claude Code plugin.",
   "plugins": [
     {
       "name": "alfred",
       "source": "./",
-      "description": "Warm, human-in-the-loop job-application assistant: finds IT jobs, researches companies, tailors your resume truthfully, and applies via portal or direct recruiter email after you approve each one on Telegram.",
+      "description": "Human-in-the-loop job assistant on the career-ops engine: finds jobs (Alfred boards + career-ops's 150+ ATS scanner + LinkedIn/Indeed through Aside), drops closed and ghost postings, scores each with career-ops's A–H report, tailors a fact-checked CV, tracks everything in a local tracker, and applies through Aside once you approve.",
       "category": "productivity",
-      "keywords": ["job-search", "job-application", "resume", "outreach", "human-in-the-loop"]
+      "keywords": [
+        "job-search",
+        "job-application",
+        "resume",
+        "outreach",
+        "human-in-the-loop"
+      ]
     }
   ]
 }

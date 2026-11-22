@@ -1,3 +1,5 @@
+> **Historical (pre-2.0).** This describes Alfred before the career-ops merge (Telegram, Notion, cover letters). The current design is in `README.md`, `RUNBOOK.md` and `agents/`.
+
 # Alfred — Plugin Build Spec (Claude Code plugin + marketplace)
 
 > **Audience:** a fresh ("cold") Claude Code builder session opened in this repo.

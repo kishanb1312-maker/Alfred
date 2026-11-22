@@ -1,19 +1,17 @@
 ---
-description: First-run Alfred setup wizard — venv & deps, resume, search + screening config, secrets (via CLI, never in chat), Telegram, Notion, and a doctor check.
+description: First-run Alfred setup — venv, the career-ops engine, cv.md from your resume, career-ops profile + portals, Alfred search + screening config, Gmail secrets (via CLI, never in chat), Aside check, and a doctor run.
 disable-model-invocation: true
 ---
 
 # /alfred-setup — first-run wizard
 
 Load and follow the **alfred-onboarding** skill now — invoke the Skill tool with
-`alfred:alfred-onboarding`. That skill runs the complete guided setup (§6 of the build spec).
+`alfred:alfred-onboarding`.
 
-Two rules that must hold throughout:
-- **Secrets are NEVER collected in chat.** For every secret (`TELEGRAM_BOT_TOKEN`, `GMAIL_ADDRESS`,
-  `GMAIL_APP_PASSWORD`, optional API keys), the wizard shows the user how to obtain it and has them run
-  `alfred set-secret <KEY>` in **their own terminal** (getpass, no echo). Do not ask the user to
-  paste a secret value, and never write a secret yourself.
-- **Non-secret config IS collected conversationally** (roles, locations, seniority, blacklist, caps,
-  match threshold, work authorization, notice period, salary, relocate/remote, phone, profile URLs) and
-  written directly to `~/.alfred/config/search.yaml` and `~/.alfred/config/profile.yaml`, keeping
-  `dry_run: true`.
+Rules that hold throughout:
+- **Secrets are NEVER collected in chat.** `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` and optional API
+  keys are entered by the user with `alfred set-secret <KEY>` in their own terminal.
+- **Non-secret config IS collected conversationally** and written to `config/search.yaml`,
+  `config/profile.yaml`, and (through career-ops's writer) `config/profile.yml` + `portals.yml`,
+  keeping `dry_run: true`.
+- `cv.md` is built only from the user's own resume and what they say — nothing invented.

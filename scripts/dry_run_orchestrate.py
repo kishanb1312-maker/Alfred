@@ -1,8 +1,8 @@
 """Alfred · Orchestrator DRY-RUN (OFFLINE — no network, no subagent calls).
 
 Exercises the deterministic glue in scripts/orchestrate.py:
-  1. preflight() against the EXAMPLE configs (+ a temp sample resume) → OK/dry_run,
-     and a second call proving it BLOCKS when the resume is missing,
+  1. preflight() against the EXAMPLE configs (+ a temp cv.md) → OK/dry_run,
+     and a second call proving it BLOCKS when cv.md is missing,
   2. merge_job() assembling the canonical job object from sample finder/research/
      tailoring parts,
   3. run_summary() for a simulated dry_run pass.
@@ -43,24 +43,17 @@ FINDER = {
 }
 
 RESEARCH = {
-    "company_analysis": {
-        "summary": "[MOCK] SaaS infra company.", "industry": "Cloud infrastructure",
-        "size": "201-500", "tech_stack": ["Kubernetes", "AWS", "Terraform"],
-        "values_culture": "reliability-first", "recent_signal": "multi-region launch",
-        "website": "https://globex.example",
-    },
-    "email": {"address": "priya.sharma@globex.example", "recipient_name": "Priya Sharma",
-              "confidence": 92, "source": "hunter", "verified": True, "is_personal": True},
-    "match": {"score": 91, "rationale": "strong k8s/AWS overlap", "meets_threshold": True},
+    "employer_url": "https://boards.greenhouse.io/globex/jobs/123",
+    "score": "4.4/5", "recommendation": "Apply", "legitimacy": "High Confidence",
+    "report": "reports/007-globex-2026-11-22.md", "tracker_num": 7,
+    "contact_email": "priya.sharma@globex.example", "email_source": "hunter",
+    "verified_mailbox": True,
 }
 
 TAILORING = {
-    "files": {
-        "resume": "output/GlobexSystems_SiteReliabilityEngineer/Resume_GlobexSystems.pdf",
-        "cover_letter": "output/GlobexSystems_SiteReliabilityEngineer/CoverLetter_GlobexSystems.pdf",
-    },
-    "what_i_changed": "Summary rewrite + 2 bullet re-emphases (Kubernetes, AWS, Terraform).",
-    "notion_url": "https://notion.so/fake-page-A1",
+    "cv_pdf": "output/cv-kishan-globex-2026-11-22.pdf",
+    "fact_check": "pass",
+    "output_dir": "output/Globex_ProductDesigner",
 }
 
 
@@ -70,23 +63,23 @@ def main() -> int:
     print("=" * 66)
 
     workdir = tempfile.mkdtemp(prefix="alfred_orch_")
-    resume_path = os.path.join(workdir, "master_resume.docx")
-    with open(resume_path, "wb") as fh:               # temp stand-in resume
-        fh.write(b"PK\x03\x04 fake docx for preflight glob\n")
+    cv_path = os.path.join(workdir, "cv.md")
+    with open(cv_path, "w", encoding="utf-8") as fh:   # temp stand-in cv.md
+        fh.write("# Fake Person\n\n## Experience\n")
     resume_glob = os.path.join(workdir, "*.docx")
     no_pause = os.path.join(workdir, "paused.flag")   # absent
 
     # ---- 1a. preflight against example configs (should be OK, dry_run ON) --
-    print("\n1a) preflight() — example configs + temp resume, not paused:\n")
+    print("\n1a) preflight() — example configs + temp cv.md, not paused:\n")
     report = orch.preflight(search_path=EX_SEARCH, profile_path=EX_PROFILE,
-                            resume_glob=resume_glob, pause_flag=no_pause)
+                            resume_glob=resume_glob, pause_flag=no_pause, cv_path=cv_path)
     orch._print_preflight(report)
 
     # ---- 1b. preflight BLOCKED (no resume) --------------------------------
-    print("\n1b) preflight() — same, but resume missing (proves it blocks):\n")
+    print("\n1b) preflight() — same, but cv.md missing (proves it blocks):\n")
     blocked = orch.preflight(search_path=EX_SEARCH, profile_path=EX_PROFILE,
-                             resume_glob=os.path.join(workdir, "none", "*.docx"),
-                             pause_flag=no_pause)
+                             resume_glob=resume_glob, pause_flag=no_pause,
+                             cv_path=os.path.join(workdir, "none", "cv.md"))
     orch._print_preflight(blocked)
 
     # ---- 2. merge_job → canonical job object ------------------------------
@@ -99,8 +92,8 @@ def main() -> int:
     print("\n" + "=" * 66)
     print("3) run_summary(stats) — simulated dry_run pass:\n")
     stats = {
-        "found": 5, "researched": 5, "tailored": 3, "tracked": 3,
-        "approved": 1, "applied": 1, "skipped": 2, "pending_approval": 2,
+        "found": 9, "verified": 6, "dead": 3, "evaluated": 6, "tailored": 3,
+        "blocked_facts": 1, "approved": 1, "applied": 1, "skipped": 2, "pending_approval": 2,
         "dry_run": True, "caps_remaining": {"apply": 24, "email": 9},
     }
     print(orch.run_summary(stats))
@@ -114,15 +107,16 @@ def main() -> int:
     failures += [] if ok_pre else ["preflight against examples should be OK + dry_run ON"]
     print(f"  [{'OK' if ok_pre else 'XX'}] preflight OK, dry_run ON, not paused")
 
-    ok_block = blocked["blocked"] is True and not blocked["checks"]["resume"]["exists"]
-    failures += [] if ok_block else ["preflight should block when resume missing"]
-    print(f"  [{'OK' if ok_block else 'XX'}] preflight blocks on missing resume")
+    ok_block = blocked["blocked"] is True and not blocked["checks"]["cv"]["exists"]
+    failures += [] if ok_block else ["preflight should block when cv.md missing"]
+    print(f"  [{'OK' if ok_block else 'XX'}] preflight blocks on missing cv.md")
 
     contract_keys = {
         "job_id", "source", "title", "company", "company_domain", "location", "url",
-        "posted_date", "easy_apply", "description_snippet", "company_analysis", "email",
-        "match", "channel", "files", "what_i_changed", "notion_url", "applied_date",
-        "reply", "follow_up_sent",
+        "posted_date", "easy_apply", "description_snippet", "employer_url", "liveness",
+        "repost", "score", "recommendation", "legitimacy", "report", "tracker_num",
+        "contact_email", "email_source", "verified_mailbox", "channel", "cv_pdf",
+        "fact_check", "output_dir", "applied_date",
     }
     missing = contract_keys - set(job.keys())
     ok_contract = not missing
@@ -130,10 +124,17 @@ def main() -> int:
     print(f"  [{'OK' if ok_contract else 'XX'}] canonical job has all {len(contract_keys)} "
           f"contract keys (missing={sorted(missing)})")
 
-    ok_channel = job["channel"] == "email"
-    failures += [] if ok_channel else [f"channel should derive 'email', got {job['channel']!r}"]
-    print(f"  [{'OK' if ok_channel else 'XX'}] channel derived from verified email → "
+    ok_channel = job["channel"] == "portal+email"
+    failures += [] if ok_channel else [f"channel should derive 'portal+email', got {job['channel']!r}"]
+    print(f"  [{'OK' if ok_channel else 'XX'}] channel derived from contact email → "
           f"{job['channel']!r}")
+    stale = {"notion_url", "files", "what_i_changed", "match", "company_analysis"} & set(job)
+    failures += [] if not stale else [f"retired keys still in contract: {sorted(stale)}"]
+    print(f"  [{'OK' if not stale else 'XX'}] no Notion / cover-letter / 0-100 keys left")
+    summary = orch.run_summary(stats)
+    ok_words = ("Telegram" not in summary) and ("Notion" not in summary) and ("alfred-approve" in summary)
+    failures += [] if ok_words else ["summary still mentions Telegram/Notion or lacks the review pointer"]
+    print(f"  [{'OK' if ok_words else 'XX'}] summary points to the manual review, no Telegram/Notion")
 
     ok_summary = ("DRY RUN" in orch.run_summary(stats)) and ("Applied" in orch.run_summary(stats))
     failures += [] if ok_summary else ["run_summary missing mode/labels"]

@@ -1,12 +1,13 @@
-"""Alfred · Company Research DRY-RUN (offline, mocked network).
+"""Alfred · Contact Finder DRY-RUN (offline, mocked network).
 
-Demonstrates the enrichment pipeline WITHOUT any live calls:
-  1. read the match threshold from config/search.example.yaml,
-  2. use 2 CLEARLY-FAKE jobs + a FAKE sample profile (profile.yaml shape),
-  3. MOCK company analysis + the email waterfall (no web/Hunter/LinkedIn),
-  4. run the REAL email_verify syntax check (MX skipped — offline) and the REAL
-     match_score baseline,
-  5. print the enriched objects and which jobs pass the 70 match threshold.
+Demonstrates the contact-email waterfall WITHOUT any live calls:
+  1. use CLEARLY-FAKE jobs (already scored by the job-evaluator),
+  2. MOCK the waterfall steps (no web/Hunter/LinkedIn/Aside),
+  3. run the REAL email_verify syntax check (MX skipped — offline) and the
+     REAL single-best pattern guess,
+  4. print the contact fields every job carries.
+
+Scoring is career-ops's job now (agents/job-evaluator.md), so nothing here scores.
 
 Nothing here touches the network. Mocked values are labeled [MOCK]; sample jobs
 and profile are labeled [FAKE], per the "no fabrication" guardrail (dry-run only).
@@ -22,7 +23,6 @@ import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import email_verify  # noqa: E402
-import match_score  # noqa: E402
 import paths  # noqa: E402  bundled example config lives under CODE_ROOT
 
 SEARCH_CFG = paths.search_example()
@@ -233,21 +233,11 @@ def resolve_email(job: dict, wf: dict) -> dict:
     }
 
 
-def enrich(job: dict, profile: dict, threshold: int) -> dict:
+def enrich(job: dict) -> dict:
     # --- Email (mock discovery + REAL offline verify + pattern-guess fallback) ---
     wf = mock_waterfall(job)
     em = resolve_email(job, wf)
     guessed = em["email_source"] == "pattern"
-
-    # --- Match (REAL deterministic baseline) ---
-    job_text = f"{job['title']} {job['description_snippet']}"
-    detail = match_score.baseline_detail(job_text, profile)
-    score = detail["score"]
-    meets = score >= threshold
-    rationale = (
-        f"baseline skill overlap {score}/100 "
-        f"(matched: {', '.join(detail['matched']) or 'none'})"
-    )
 
     enriched = dict(job)
     enriched["company_analysis"] = MOCK_ANALYSIS[job["job_id"]]
@@ -256,7 +246,6 @@ def enrich(job: dict, profile: dict, threshold: int) -> dict:
         "confidence": em["confidence"], "source": em["email_source"],
         "verified": em["verified_mailbox"], "flagged": guessed,
     }
-    enriched["match"] = {"score": score, "rationale": rationale, "meets_threshold": meets}
     # dual-channel fields (every surviving job)
     enriched["apply_portal"] = True
     enriched["cold_email"] = em["cold_email"]
@@ -269,39 +258,23 @@ def enrich(job: dict, profile: dict, threshold: int) -> dict:
 
 def main() -> int:
     print("=" * 72)
-    print("Alfred · Company Research — DRY RUN (offline, mocked network)")
+    print("Alfred · Contact Finder — DRY RUN (offline, mocked network)")
     print("=" * 72)
-
-    cfg = yaml.safe_load(open(SEARCH_CFG, encoding="utf-8")) or {}
-    threshold = int(cfg.get("match_threshold", 70))
-    profile = yaml.safe_load(FAKE_PROFILE_YAML) or {}
-
-    print(f"\nmatch_threshold : {threshold}  (from {os.path.relpath(SEARCH_CFG, paths.CODE_ROOT)})")
-    print("profile         : [FAKE] in-script sample (profile.yaml shape)")
-    print(f"profile skills  : {sorted((profile.get('years_experience') or {}).keys())}")
-    print("company analysis + email waterfall are [MOCK] (no live calls).")
-    print("email_verify (syntax) + match_score (baseline) run FOR REAL, offline.\n")
+    print("email waterfall steps are [MOCK] (no live calls); email_verify runs FOR REAL, offline.\n")
 
     jobs = fake_jobs()
-    enriched = [enrich(j, profile, threshold) for j in jobs]
+    enriched = [enrich(j) for j in jobs]
 
     print("Enriched job records:")
     print(json.dumps(enriched, indent=2, ensure_ascii=False))
 
-    passed = [e for e in enriched if e["match"]["meets_threshold"]]
-    dropped = [e for e in enriched if not e["match"]["meets_threshold"]]
-
     print("\n" + "-" * 72)
-    print(f"Threshold filter (>= {threshold}) + dual-channel plan:")
+    print("Contact plan:")
     for e in enriched:
-        verdict = "PASS ✅" if e["match"]["meets_threshold"] else "DROP ✂️"
         chans = "portal" + (" + email" if e["cold_email"] else " only")
         guess = " ⚠️guess" if e["email_source"] == "pattern" else ""
-        print(f"  {verdict}  {e['company']:<14} {e['title']:<24} "
-              f"score={e['match']['score']:>3}  [{chans}] "
+        print(f"  {e['company']:<14} {e['title']:<24} [{chans}] "
               f"email={e['contact_email'] or 'none'}{guess}")
-    print(f"\n{len(passed)} job(s) handed off to resume-cover-letter; "
-          f"{len(dropped)} dropped below threshold.")
 
     # ---- Assertions --------------------------------------------------------
     by_id = {e["job_id"]: e for e in enriched}
@@ -351,7 +324,7 @@ def main() -> int:
             print(f"  - {f}")
         print("=" * 72)
         return 1
-    print("RESULT: PASS ✅ — dual-channel email-for-every-job + single best guess; offline.")
+    print("RESULT: PASS ✅ — contact-for-every-job + single best guess; offline.")
     print("=" * 72)
     return 0
 

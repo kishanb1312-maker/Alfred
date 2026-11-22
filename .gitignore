@@ -18,3 +18,22 @@ venv/
 
 # OS
 .DS_Store
+
+# career-ops engine (pinned clone, installed by `alfred careerops-install`)
+vendor/
+
+# career-ops user layer — lives in the Alfred home next to data/ (personal, never commit)
+cv.md
+article-digest.md
+voice-dna.md
+portals.yml
+config/profile.yml
+config/cv-facts.json
+modes/
+reports/
+jds/
+interview-prep/
+documents/
+writing-samples/
+batch/
+.career-ops-data

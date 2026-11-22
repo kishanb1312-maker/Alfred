@@ -1,0 +1,18 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  offline-suites:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      # career-ops is not installed in CI, so its self-tests are skipped and every
+      # bridge call is exercised against the fake runner in dry_run_careerops_bridge.py.
+      - run: python scripts/run_tests.py

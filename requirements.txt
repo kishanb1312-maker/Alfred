@@ -1,15 +1,16 @@
 # Deterministic Python helpers (run via Bash from the Claude Code session).
 # The "brain" is your Claude Code session — no LLM SDK is listed here on purpose.
 
-python-docx>=1.1.0      # read/edit the master resume DOCX (text only, format locked)
+python-docx>=1.1.0      # read the master resume .docx once, to create cv.md
 PyYAML>=6.0             # read config/search.yaml + config/profile.yaml
 requests>=2.31.0        # email-finder API (Hunter/Apollo), job-board APIs, etc.
 email-validator>=2.1.0  # syntax validation for discovered emails
 dnspython>=2.6.0        # MX-record check during email verification
 
-# System dependency (NOT pip): LibreOffice — used for DOCX -> PDF conversion
-#   Windows: winget install TheDocumentFoundation.LibreOffice
-#   macOS:   brew install --cask libreoffice
-#   Ubuntu:  sudo apt-get install libreoffice
-# Invoked as:  soffice --headless --convert-to pdf <file.docx>
-#   (On Windows the .exe is auto-located under %ProgramFiles%\LibreOffice\program\.)
+# System dependencies (NOT pip):
+#   Node.js 22.13+  — runs the career-ops engine (vendor/career-ops). macOS: brew install node
+#   git             — `alfred careerops-install` clones the pinned career-ops commit
+#   Aside           — the browser Alfred drives (https://aside.com); optional, browser sources
+#                     and portal applying are skipped without it
+# career-ops's own Node deps and its headless Chromium (for CV PDFs and liveness checks) are
+# installed by `alfred careerops-install`.

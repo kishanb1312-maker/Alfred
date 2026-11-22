@@ -1,44 +1,42 @@
 ---
-description: Run the full Alfred pipeline (reconcile → find → research → tailor → track → approve → apply → report), preflight-gated. Honors dry_run, /pause, and daily caps.
+description: Run the full Alfred pipeline (find → verify → evaluate → contacts → CV → review list → apply approved → report), preflight-gated. Honors dry_run, /pause and daily caps.
 disable-model-invocation: true
 ---
 
 # /alfred-run — the whole pipeline
 
-Execute the Alfred runbook end to end. **This changes no agent behavior** — it is the exact
-sequence in `RUNBOOK.md`, only gated by a preflight check. Invoke each subagent in order and
-**stop on any blocker**.
+Execute `RUNBOOK.md` end to end, invoking each subagent in order and **stopping on any blocker**.
+Run Alfred's scripts with `${ALFRED_HOME:-$HOME/.alfred}/.venv/bin/python` (fall back to `python3`); scripts live in
+`${CLAUDE_PLUGIN_ROOT}/scripts/`. career-ops lives in `${ALFRED_HOME:-$HOME/.alfred}/vendor/career-ops`: run its `node` scripts from
+there with `CAREER_OPS_ROOT=${ALFRED_HOME:-$HOME/.alfred}` exported, so it reads and writes Alfred's own files.
 
-Run the bundled scripts with the Alfred Python env — `${ALFRED_HOME:-$HOME/.alfred}/.venv/bin/python`
-(fall back to `python3` if that venv is absent). Scripts live under `${CLAUDE_PLUGIN_ROOT}/scripts/`.
-
-## 0. Preflight gate — MANDATORY, do this first
-Run `${CLAUDE_PLUGIN_ROOT}/scripts/orchestrate.py --preflight`.
-- **Non-zero exit** (missing `config/search.yaml`, `config/profile.yaml`, master resume in `data/`, or
-  **/pause** is set) → STOP and report the issues. Do not run any stage.
-- Record the reported **dry_run** state and carry it into every stage below.
+## 0. Preflight — MANDATORY, first
+`orchestrate.py --preflight`. Non-zero exit (missing `config/search.yaml`, `config/profile.yaml`,
+`cv.md`, or **/pause** set) → STOP and report. Then `careerops_bridge.py status`: no career-ops
+install → tell the user to run `/alfred:alfred-setup` and STOP. Carry the **dry_run** state into
+every stage.
 
 ## The sequence
-1. **Reconcile** — invoke the `alfred:approval-gate` subagent to poll Telegram for taps made since
-   the last run: apply Approvals (hand to `alfred:application-agent`), record Skips. Clears the backlog first.
-2. **Find** — invoke `alfred:job-finder` → fresh, de-duped jobs (respects the configured sources).
-3. **Research** — invoke `alfred:company-research` per job → company analysis + verified email
-   (waterfall) + match score. Drop jobs below `match_threshold`.
-4. **Tailor** — invoke `alfred:resume-cover-letter` per surviving job → tailored `.docx`/`.pdf`,
-   cover letter, outreach email, and the mandatory `what_i_changed.md`. Merge into the canonical job
-   object (see `RUNBOOK.md`).
-5. **Track** — invoke `alfred:tracker` → create/update a Notion row per job at Status "Ready for Review".
-6. **Approve** — invoke `alfred:approval-gate` → send a Telegram card per job; poll briefly for
-   immediate taps. Un-tapped jobs wait for a later run.
-7. **Apply** — invoke `alfred:application-agent` → process `data/approved_queue.json`, **respecting
-   /pause, dry_run, and daily caps**: send verified emails; fill portal forms and hand the final Submit
-   to the human on LinkedIn/Workday. Mark Applied in Notion + `applied_history`.
-8. **Report** — run `${CLAUDE_PLUGIN_ROOT}/scripts/orchestrate.py --summary` with the run stats and
-   report counts, caps remaining, and what needs the user.
+1. **Apply what you already approved** — if `data/approved_queue.json` has jobs from earlier runs,
+   invoke `alfred:application-agent` first.
+2. **Find** — `alfred:job-finder`: Alfred's API/RSS boards + `careerops_scan` (both zero-token),
+   then LinkedIn / Indeed / Wellfound through Aside.
+3. **Verify** — `alfred:job-verifier`: confirm at the employer, liveness, reposts. Closed and stale
+   postings are dropped here, before any tokens are spent on them.
+4. **Evaluate** — `alfred:job-evaluator`: career-ops triage, then the full A–H report + 1–5 score
+   for jobs that pass, saved to `reports/` and the tracker.
+5. **Contacts** — `alfred:contact-finder` for jobs at or above `min_score` (default 4.0).
+6. **CV** — `alfred:cv-tailor`: tailored CV PDF + fact gate + short email draft → review list.
+7. **Review** — show the review list (`alfred_cli.py review`) and stop for the user's decisions.
+   Nothing new is applied in this run unless the user approves jobs now
+   (`/alfred:alfred-approve`), in which case run step 8.
+8. **Apply** — `alfred:application-agent` on `data/approved_queue.json`, respecting /pause,
+   dry_run and caps.
+9. **Report** — `orchestrate.py --summary` with the run stats: counts, caps left, what needs the
+   user, and every `needs_confirmation` line.
 
 ## Guardrails (never bypass)
-- **dry_run: true** → prepare everything, send/submit **nothing**.
-- **/pause** (`data/paused.flag`) → the application-agent must not act; abort the Apply stage.
-- **daily caps** → never exceed the configured applies/emails per day.
-- A Telegram **Approve** is required before any send; the **human** makes the final Submit click on
-  ban-prone portals. Nothing acts without an explicit Approve.
+- **dry_run: true** → prepare everything, submit and send **nothing**.
+- **/pause** → the application agent does not act.
+- **Daily caps** → never exceeded.
+- Nothing is applied without the user's explicit approve; no email without its own clear.
