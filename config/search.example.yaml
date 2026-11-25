@@ -69,6 +69,15 @@ min_score: 4.0
 apply:
   auto_submit: true
 
+# How a cleared cold email leaves.
+#   smtp            -> sent immediately through Gmail SMTP (GMAIL_ADDRESS in .env)
+#   gmail_schedule  -> Aside schedules it in Gmail ("Schedule send") for schedule_at, IST,
+#                      with that job's own tailored CV attached. Aside must be signed in as account.
+email:
+  mode: gmail_schedule
+  schedule_at: "11:00"
+  account: "you@gmail.com"
+
 pacing:
   min_gap_seconds: 45
   max_gap_seconds: 180

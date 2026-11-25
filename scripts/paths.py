@@ -162,6 +162,16 @@ def email_drafts_path() -> str:
     return os.path.join(data_dir(), "email_drafts.json")
 
 
+def apply_results_path() -> str:
+    """One record per application attempt: status, confirmation, host, final URL."""
+    return os.path.join(data_dir(), "apply_results.json")
+
+
+def scheduled_emails_path() -> str:
+    """Emails scheduled in Gmail through Aside (to, subject, time, account, CV)."""
+    return os.path.join(data_dir(), "scheduled_emails.json")
+
+
 def review_queue_path() -> str:
     """Jobs evaluated, tailored and waiting for your Approve/Skip."""
     return os.path.join(data_dir(), "review_queue.json")

@@ -27,7 +27,7 @@ Node 22.13+. Either fails → stop.
 | 5 | **CV + fact gate** | `cv-tailor` | medium | `output/*.pdf`, `data/tailor_output.json`, review list |
 | 6 | **Review** — you decide | you (`/alfred:alfred-approve`, `alfred review`) | none | `data/job_decisions.json`, `data/approved_queue.json` |
 | 7 | **Apply** | `application-agent` | browser | tracker → Applied, follow-up seeded |
-| 8 | **Report** | `orchestrate.py --summary` | none | — |
+| 8 | **Report** | `run_report.py` + `orchestrate.py --summary` | none | `output/reports/run-report-<date>.md`, `output/reports/dashboard-<date>.html` |
 
 Only jobs with score ≥ `min_score` (default **4.0**, career-ops's own line) reach stages 4–6.
 Lower ones stay in the tracker as `Evaluated` with their report.

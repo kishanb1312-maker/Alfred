@@ -32,8 +32,9 @@ every stage.
    (`/alfred:alfred-approve`), in which case run step 8.
 8. **Apply** — `alfred:application-agent` on `data/approved_queue.json`, respecting /pause,
    dry_run and caps.
-9. **Report** — `orchestrate.py --summary` with the run stats: counts, caps left, what needs the
-   user, and every `needs_confirmation` line.
+9. **Report** — `run_report.py` → `output/reports/run-report-<date>.md` and
+   `output/reports/dashboard-<date>.html` (everything found, scored, applied, scheduled, and
+   what needs the user). Then `orchestrate.py --summary`, and give the user both file paths.
 
 ## Guardrails (never bypass)
 - **dry_run: true** → prepare everything, submit and send **nothing**.

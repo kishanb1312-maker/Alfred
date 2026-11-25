@@ -89,11 +89,26 @@ Watch the Aside session and give the user a one-line status about every 60 secon
 (success page text or a confirmation email). `filled`/`blocked` → keep it queued, tell the user
 what is left and the URL. `failed` → report the error.
 
+**Log every attempt** with `review_store.record_apply_result(job_id, status, host=…,
+final_url=…, confirmation=…, unanswered=[…], notes=…)` — it refuses `submitted` without a
+confirmation. Under dry_run, log `dry_run`. The run report and dashboard are built from this.
+
 **Feed leads** (`source: linkedin_feed`): `outreach_method: link` → portal flow above.
 `dm`/`comment` → draft the message and show it to the user; **never** send a DM, comment or
 connection request yourself. `email` → channel B.
 
 # B. Cold email — only when the user cleared it
+
+`config/search.yaml : email.mode` decides how a cleared email leaves:
+- `smtp` (default) — sent now through `email_gate.perform_send` (below).
+- `gmail_schedule` — **scheduled, not sent**: through Aside, open Gmail signed in as
+  `email.account`, compose to the contact with the draft's subject and body
+  (`review_store.load_draft`), attach that job's own tailored CV PDF, and use *Schedule send* for
+  the next `email.schedule_at` (IST; today if still ahead, else tomorrow). Check the Scheduled
+  folder shows it, then log it with `review_store.record_scheduled_email(job_id, to, subject,
+  scheduled_for, account, attachment)`. Gmail not signed in as that account → schedule nothing;
+  put the full email (to, subject, body, attachment path) in the tracker note. dry_run → do not
+  schedule; log `status="dry_run"`. Caps and the send-once rule apply the same way.
 
 Approving a job does not approve its email. Send only when
 `review_store.email_decision(job_id) == "cleared"` (the user ran `alfred approve <id> --email` or

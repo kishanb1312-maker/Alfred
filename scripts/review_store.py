@@ -48,6 +48,8 @@ REVIEW_QUEUE = paths.review_queue_path()
 JOB_DECISIONS = paths.job_decisions_path()
 EMAIL_DECISIONS = paths.email_decisions_path()
 EMAIL_DRAFTS = paths.email_drafts_path()
+APPLY_RESULTS = paths.apply_results_path()
+SCHEDULED_EMAILS = paths.scheduled_emails_path()
 
 _EMAIL_MESSAGE_FILE = "email_message.txt"
 
@@ -409,6 +411,63 @@ def email_decision(job_id: str) -> Optional[str]:
     store = _read_json(EMAIL_DECISIONS, {})
     rec = store.get(job_id) if isinstance(store, dict) else None
     return rec.get("decision") if isinstance(rec, dict) else None
+
+
+# ---------------------------------------------------------------------------
+# Run log — what actually happened (read by scripts/run_report.py)
+# ---------------------------------------------------------------------------
+
+APPLY_STATUSES = ("submitted", "filled", "blocked", "failed", "dry_run")
+
+
+def record_apply_result(job_id: str, status: str, *, host: Optional[str] = None,
+                        final_url: Optional[str] = None, confirmation: Optional[str] = None,
+                        unanswered: Optional[List[str]] = None,
+                        notes: Optional[str] = None) -> Dict[str, Any]:
+    """Log one application attempt. `submitted` needs a confirmation from the site."""
+    if status not in APPLY_STATUSES:
+        raise ValueError(f"status must be one of {APPLY_STATUSES}, got {status!r}")
+    if status == "submitted" and not confirmation:
+        raise ValueError("submitted needs the site's confirmation text")
+    store = _read_json(APPLY_RESULTS, {})
+    if not isinstance(store, dict):
+        store = {}
+    attempts = (store.get(job_id) or {}).get("attempts", 0) + 1
+    rec = {"status": status, "host": host, "final_url": final_url, "confirmation": confirmation,
+           "unanswered": unanswered or [], "notes": notes, "ts": _now_iso(), "attempts": attempts}
+    store[job_id] = rec
+    _write_json(APPLY_RESULTS, store)
+    return rec
+
+
+def apply_results() -> Dict[str, Dict[str, Any]]:
+    store = _read_json(APPLY_RESULTS, {})
+    return store if isinstance(store, dict) else {}
+
+
+def record_scheduled_email(job_id: str, to: str, subject: str, scheduled_for: str,
+                           account: str, attachment: Optional[str] = None,
+                           status: str = "scheduled") -> Dict[str, Any]:
+    """Log an email Aside scheduled in Gmail (status: scheduled | failed | dry_run)."""
+    store = _read_json(SCHEDULED_EMAILS, {})
+    if not isinstance(store, dict):
+        store = {}
+    rec = {"to": to, "subject": subject, "scheduled_for": scheduled_for, "account": account,
+           "attachment": _portable(attachment) if attachment else None, "status": status,
+           "ts": _now_iso()}
+    store[job_id] = rec
+    _write_json(SCHEDULED_EMAILS, store)
+    return rec
+
+
+def scheduled_emails() -> Dict[str, Dict[str, Any]]:
+    store = _read_json(SCHEDULED_EMAILS, {})
+    return store if isinstance(store, dict) else {}
+
+
+def all_review_jobs() -> List[Dict[str, Any]]:
+    store = _read_json(REVIEW_QUEUE, {})
+    return [get_job(j) for j in store] if isinstance(store, dict) else []
 
 
 # ---------------------------------------------------------------------------
