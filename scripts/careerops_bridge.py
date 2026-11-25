@@ -446,9 +446,11 @@ def repost_urls(report: Dict[str, Any]) -> Dict[str, str]:
 
 def verify_facts(generated: str, sources: Optional[List[str]] = None) -> Dict[str, Any]:
     """Run the CV fact gate. verdict: pass | warn | block | error."""
-    args = [generated, "--json"]
+    # career-ops scripts run with cwd=vendor/career-ops, so a path relative to the
+    # caller's cwd (e.g. "output/x.html" from the Alfred home) must be made absolute.
+    args = [os.path.abspath(generated), "--json"]
     for s in sources or []:
-        args += ["--source", s]
+        args += ["--source", os.path.abspath(s)]
     res = _run("verify-cv-facts.mjs", args, timeout=300)
     data = _last_json(res["stdout"])
     if isinstance(data, dict) and data.get("verdict"):

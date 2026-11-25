@@ -37,3 +37,8 @@ documents/
 writing-samples/
 batch/
 .career-ops-data
+
+# Local scratch + one-off personal scripts + config backups (personal data, never commit)
+tmp/
+scripts/local/
+config/*.backup-*
